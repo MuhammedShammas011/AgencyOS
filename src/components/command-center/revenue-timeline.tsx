@@ -12,10 +12,41 @@ import {
   Legend
 } from 'recharts';
 import { formatCurrency, formatCompactNumber } from '@/lib/utils';
-import { useAgencyStore } from '@/lib/context/agency-store-context';
+
+interface TooltipPayloadItem {
+  name: string;
+  value: number;
+  color: string;
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: TooltipPayloadItem[];
+  label?: string;
+}
+
+function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-[#1C1C1A] text-white p-3 rounded-lg shadow-xl border border-[#2E2E2B] text-xs">
+        <p className="font-mono text-[#D7FF64] mb-2 font-medium">{label}</p>
+        <div className="space-y-1">
+          {payload.map((entry, idx) => (
+            <div key={idx} className="flex items-center justify-between gap-4">
+              <span className="text-[#AAAAAA]">{entry.name}:</span>
+              <span className="font-mono font-semibold" style={{ color: entry.color }}>
+                {formatCurrency(entry.value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
 
 export function RevenueTimeline() {
-  const { invoices, expenses } = useAgencyStore();
   const [viewMode, setViewMode] = useState<'monthly' | 'weekly'>('monthly');
   const [mounted, setMounted] = useState(false);
 
@@ -43,23 +74,6 @@ export function RevenueTimeline() {
   ];
 
   const chartData = viewMode === 'monthly' ? monthlyData : weeklyData;
-
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-[#1C1C1A] text-white p-3 rounded-lg border border-[#2F2F2C] shadow-xl text-xs font-mono space-y-1">
-          <p className="font-sans font-semibold text-[#D7FF64] mb-1">{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <div key={index} className="flex justify-between gap-4 text-[11px]">
-              <span style={{ color: entry.color }}>{entry.name}:</span>
-              <span className="font-bold">{formatCurrency(entry.value)}</span>
-            </div>
-          ))}
-        </div>
-      );
-    }
-    return null;
-  };
 
   return (
     <div className="bg-[#FFFFFF] border border-[#E6E4DE] rounded-xl p-5 shadow-2xs space-y-4">
