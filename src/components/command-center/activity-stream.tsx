@@ -8,12 +8,13 @@ import {
   FileCheck,
   CreditCard,
   FileText,
-  UserCheck,
   Layers,
   Receipt,
   UserPlus,
-  ShieldAlert
+  ShieldAlert,
+  ArrowRight
 } from 'lucide-react';
+import Link from 'next/link';
 
 export function ActivityStream() {
   const { activityLogs } = useAgencyStore();
@@ -23,7 +24,7 @@ export function ActivityStream() {
       case 'payment_received':
         return <CreditCard className="w-3.5 h-3.5 text-[#30A46C]" />;
       case 'proposal_accepted':
-        return <FileCheck className="w-3.5 h-3.5 text-[#D7FF64]" />;
+        return <FileCheck className="w-3.5 h-3.5 text-[#23784F]" />;
       case 'proposal_sent':
         return <FileText className="w-3.5 h-3.5 text-[#777777]" />;
       case 'deliverable_submitted':
@@ -41,61 +42,58 @@ export function ActivityStream() {
     }
   };
 
+  const recentLogs = activityLogs.slice(0, 4);
+
   return (
-    <div className="bg-[#FFFFFF] border border-[#E6E4DE] rounded-xl p-5 shadow-2xs space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
+    <div className="bg-[#FFFFFF] border border-[#E6E4DE] rounded-xl p-5 shadow-2xs space-y-4 flex flex-col justify-between h-full">
+      <div>
+        <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-semibold text-[#171717] tracking-tight">
-            Recent Intelligence Stream
+            Recent Studio Activity
           </h3>
-          <p className="text-xs text-[#777777]">
-            Real-time audit log of team actions, financial events, and client approvals
-          </p>
+          <span className="text-[10px] font-mono uppercase text-[#777777] bg-[#F7F6F2] px-2 py-0.5 rounded border border-[#E6E4DE]">
+            Live Feed
+          </span>
         </div>
-        <span className="text-[10px] font-mono uppercase text-[#777777] bg-[#F7F6F2] px-2 py-1 rounded border border-[#E6E4DE]">
-          Live Event Bus
-        </span>
+        <p className="text-xs text-[#777777]">
+          Real-time updates on payments, deliverables, and client interactions
+        </p>
       </div>
 
-      <div className="divide-y divide-[#E6E4DE] max-h-96 overflow-y-auto">
-        {activityLogs.length === 0 ? (
-          <div className="py-8 text-center text-xs text-[#777777]">
-            No recent activity recorded.
-          </div>
-        ) : (
-          activityLogs.map((log) => (
-            <div key={log.id} className="py-3 px-1 flex items-start gap-3 group">
-              <div className="p-2 rounded-full bg-[#FAFAF8] border border-[#E6E4DE] shrink-0 mt-0.5">
-                {getActionIcon(log.action_type)}
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-[#171717] truncate">
-                    {log.actor_name}
-                  </span>
-                  <span className="text-[10px] font-mono text-[#999999] shrink-0">
-                    {formatRelativeTime(log.created_at)}
-                  </span>
-                </div>
-
-                <div className="text-[10px] text-[#777777] font-mono uppercase">
-                  {log.actor_role}
-                </div>
-
-                <p className="text-xs text-[#333333] mt-1 leading-relaxed">
-                  {log.description}
-                </p>
-
-                <div className="mt-1.5 flex items-center gap-1.5">
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 bg-[#F2EFE9] text-[#555555] rounded">
-                    {log.entity_type.toUpperCase()}: {log.entity_name}
-                  </span>
-                </div>
-              </div>
+      <div className="space-y-3 flex-1">
+        {recentLogs.map((log) => (
+          <div
+            key={log.id}
+            className="flex items-start gap-3 p-2.5 rounded-lg hover:bg-[#FAFAF8] transition-colors border border-transparent hover:border-[#E6E4DE]"
+          >
+            <div className="p-1.5 rounded-md bg-[#F7F6F2] border border-[#E6E4DE] shrink-0 mt-0.5">
+              {getActionIcon(log.action_type)}
             </div>
-          ))
-        )}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-[#171717] truncate">
+                  {log.actor_name}
+                </span>
+                <span className="text-[10px] font-mono text-[#888888] shrink-0">
+                  {formatRelativeTime(log.created_at)}
+                </span>
+              </div>
+              <p className="text-xs text-[#555555] line-clamp-1 mt-0.5">
+                {log.description}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="pt-2 border-t border-[#F2EFE9] flex items-center justify-between text-[11px]">
+        <span className="text-[#888888]">Immutable audit trail</span>
+        <Link
+          href="/settings"
+          className="font-mono text-[#171717] hover:underline flex items-center gap-1"
+        >
+          View all logs <ArrowRight className="w-2.5 h-2.5" />
+        </Link>
       </div>
     </div>
   );

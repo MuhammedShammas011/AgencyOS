@@ -1,149 +1,214 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useAgencyStore } from '@/lib/context/agency-store-context';
-import { formatCurrency, formatCompactNumber } from '@/lib/utils';
-import { ArrowUpRight, ArrowDownRight, TrendingUp, Users, DollarSign, Wallet, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { formatCurrency } from '@/lib/utils';
+import {
+  TrendingUp,
+  Users,
+  DollarSign,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  ArrowUpRight,
+  ShieldCheck,
+  Wallet
+} from 'lucide-react';
+import Link from 'next/link';
 
 export function BusinessPulse() {
   const { businessPulse, operationalSummary } = useAgencyStore();
+  const [showSecondary, setShowSecondary] = useState(false);
 
-  const metrics = [
-    {
-      label: 'Active Clients',
-      value: businessPulse.active_clients.toString(),
-      subtext: `+${businessPulse.new_clients_this_month} onboarded this month`,
-      trend: '+12% vs last period',
-      isPositive: true,
-      icon: Users,
-    },
+  // 4 Primary executive KPIs
+  const primaryMetrics = [
     {
       label: 'Monthly Recurring Revenue',
       value: formatCurrency(businessPulse.mrr),
-      subtext: 'Retainer base committed',
-      trend: '+8.4% vs last period',
-      isPositive: true,
+      subtext: 'Committed retainer revenue',
+      badge: '+8.4% growth',
       icon: TrendingUp,
       accent: true,
+      link: '/financials',
     },
     {
-      label: 'Cash Collected',
-      value: formatCurrency(businessPulse.total_revenue_collected),
-      subtext: `Of ${formatCurrency(businessPulse.invoiced_revenue)} invoiced`,
-      trend: 'Cash realization rate 76%',
-      isPositive: true,
-      icon: DollarSign,
+      label: 'Active Clients',
+      value: `${businessPulse.active_clients}`,
+      subtext: `+${businessPulse.new_clients_this_month} onboarded this month`,
+      badge: `${businessPulse.client_retention_rate}% retention`,
+      icon: Users,
+      accent: false,
+      link: '/clients',
     },
+    {
+      label: 'Cash Realized',
+      value: formatCurrency(businessPulse.total_revenue_collected),
+      subtext: `76% collected of billings`,
+      badge: 'Positive cash flow',
+      icon: DollarSign,
+      accent: false,
+      link: '/financials',
+    },
+    {
+      label: 'Operating Profit',
+      value: formatCurrency(businessPulse.estimated_operating_profit),
+      subtext: `${businessPulse.operating_profit_margin}% net studio margin`,
+      badge: 'Healthy benchmark',
+      icon: CheckCircle2,
+      accent: false,
+      link: '/reports',
+    },
+  ];
+
+  // Secondary metrics tucked into clean drawer
+  const secondaryMetrics = [
     {
       label: 'Outstanding Receivables',
       value: formatCurrency(businessPulse.outstanding_receivables),
       subtext: `${operationalSummary.payments_due_this_week > 0 ? formatCurrency(operationalSummary.payments_due_this_week) : '₹0'} due this week`,
-      trend: operationalSummary.deliverables_overdue > 0 ? 'Follow-up needed' : 'Normal',
-      isPositive: false,
       icon: Wallet,
-      warning: businessPulse.outstanding_receivables > 0,
+      link: '/financials',
     },
     {
-      label: 'Est. Operating Profit',
-      value: formatCurrency(businessPulse.estimated_operating_profit),
-      subtext: `${businessPulse.operating_profit_margin}% Operating Margin`,
-      trend: 'Post direct agency expenses',
-      isPositive: true,
-      icon: CheckCircle2,
-    },
-    {
-      label: 'Proposal Win Rate',
+      label: 'Proposal Conversion Rate',
       value: `${businessPulse.proposal_conversion_rate}%`,
-      subtext: `${operationalSummary.proposals_awaiting} active proposals`,
-      trend: '+4% vs studio target',
-      isPositive: true,
+      subtext: `${operationalSummary.proposals_awaiting} active proposals pending`,
       icon: ArrowUpRight,
+      link: '/proposals',
     },
     {
       label: 'Client Retention Rate',
       value: `${businessPulse.client_retention_rate}%`,
-      subtext: 'Calculated over lifecycle',
-      trend: 'Healthy benchmark (>85%)',
-      isPositive: true,
+      subtext: 'Lifetime agency retention benchmark',
       icon: ShieldCheck,
+      link: '/retention',
     },
   ];
 
   return (
     <div className="space-y-3">
+      {/* Top Header bar with clean toggle */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-[#D7FF64]" />
           <h2 className="text-xs font-mono uppercase tracking-wider text-[#777777] font-semibold">
-            Business Pulse • Financial & Operational Vital Signs
+            Executive Summary
           </h2>
         </div>
-        <span className="text-[11px] font-mono text-[#777777]">
-          Timeframe: <strong className="text-[#171717]">{businessPulse.timeframe.toUpperCase()}</strong>
-        </span>
+
+        <button
+          onClick={() => setShowSecondary(!showSecondary)}
+          className="flex items-center gap-1 text-xs text-[#777777] hover:text-[#171717] transition-colors font-mono cursor-pointer"
+        >
+          <span>{showSecondary ? 'Less details' : 'More metrics'}</span>
+          {showSecondary ? (
+            <ChevronUp className="w-3.5 h-3.5" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5" />
+          )}
+        </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        {metrics.map((m, idx) => {
+      {/* 4 Focused Primary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        {primaryMetrics.map((m, idx) => {
           const Icon = m.icon;
           return (
-            <div
+            <Link
               key={idx}
-              className={`p-3.5 rounded-xl border transition-all duration-200 flex flex-col justify-between ${
+              href={m.link}
+              className={`p-4 rounded-xl border transition-all duration-200 flex flex-col justify-between group ${
                 m.accent
-                  ? 'bg-[#1C1C1A] text-white border-[#2F2F2C] shadow-sm'
-                  : 'bg-[#FFFFFF] border-[#E6E4DE] text-[#171717] shadow-2xs hover:border-[#D1CFC7]'
+                  ? 'bg-[#1C1C1A] text-white border-[#2F2F2C] shadow-sm hover:border-[#D7FF64]/40'
+                  : 'bg-[#FFFFFF] border-[#E6E4DE] text-[#171717] shadow-2xs hover:border-[#171717]/40 hover:shadow-xs'
               }`}
             >
               <div>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-2.5">
                   <span
-                    className={`text-[11px] font-medium truncate ${
-                      m.accent ? 'text-[#A3A29E]' : 'text-[#777777]'
+                    className={`text-xs font-medium ${
+                      m.accent ? 'text-[#AAAAAA]' : 'text-[#777777]'
                     }`}
                   >
                     {m.label}
                   </span>
-                  <Icon
-                    className={`w-3.5 h-3.5 ${
-                      m.accent ? 'text-[#D7FF64]' : 'text-[#999999]'
+                  <div
+                    className={`p-1.5 rounded-lg ${
+                      m.accent
+                        ? 'bg-[#2A2A28] text-[#D7FF64]'
+                        : 'bg-[#F7F6F2] text-[#171717]'
                     }`}
-                  />
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                  </div>
                 </div>
 
                 <div
-                  className={`text-lg sm:text-xl font-editorial-mono font-bold tracking-tight ${
-                    m.accent ? 'text-[#D7FF64]' : m.warning ? 'text-[#171717]' : 'text-[#171717]'
+                  className={`text-2xl font-editorial-mono font-bold tracking-tight ${
+                    m.accent ? 'text-[#D7FF64]' : 'text-[#171717]'
                   }`}
                 >
                   {m.value}
                 </div>
               </div>
 
-              <div className="pt-2 mt-2 border-t border-inherit">
-                <p
-                  className={`text-[10px] leading-tight truncate ${
+              <div
+                className={`pt-3 mt-3 border-t flex items-center justify-between ${
+                  m.accent ? 'border-[#2E2E2A]' : 'border-[#F2EFE9]'
+                }`}
+              >
+                <span
+                  className={`text-xs truncate ${
                     m.accent ? 'text-[#888888]' : 'text-[#777777]'
                   }`}
                 >
                   {m.subtext}
-                </p>
-                <div
-                  className={`text-[9px] font-mono mt-1 flex items-center gap-1 ${
+                </span>
+                <span
+                  className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 font-medium ${
                     m.accent
-                      ? 'text-[#A3A29E]'
-                      : m.isPositive
-                      ? 'text-[#23784F]'
-                      : 'text-[#B7791F]'
+                      ? 'bg-[#2A2A28] text-[#D7FF64]'
+                      : 'bg-[#EBF7EE] text-[#23784F]'
                   }`}
                 >
-                  {m.trend}
-                </div>
+                  {m.badge}
+                </span>
               </div>
-            </div>
+            </Link>
           );
         })}
       </div>
+
+      {/* Expandable secondary metrics */}
+      {showSecondary && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 animate-fade-in">
+          {secondaryMetrics.map((m, idx) => {
+            const Icon = m.icon;
+            return (
+              <Link
+                key={idx}
+                href={m.link}
+                className="p-3.5 rounded-xl border border-[#E6E4DE] bg-[#FAFAF8] hover:bg-[#FFFFFF] hover:border-[#171717]/30 transition-all flex items-center justify-between shadow-2xs"
+              >
+                <div>
+                  <span className="text-xs text-[#777777] font-medium block mb-1">
+                    {m.label}
+                  </span>
+                  <div className="text-lg font-editorial-mono font-bold text-[#171717]">
+                    {m.value}
+                  </div>
+                  <span className="text-[11px] text-[#777777] block mt-0.5">
+                    {m.subtext}
+                  </span>
+                </div>
+                <div className="p-2 rounded-lg bg-[#FFFFFF] border border-[#E6E4DE] text-[#555555]">
+                  <Icon className="w-4 h-4" />
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
