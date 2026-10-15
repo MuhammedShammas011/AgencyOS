@@ -37,7 +37,8 @@ export function ClientTable({ clients, onOpenClosure }: ClientTableProps) {
               <th className="px-4 py-3">Client & Company</th>
               <th className="px-4 py-3">Status & Health</th>
               <th className="px-4 py-3">Industry Vertical</th>
-              <th className="px-4 py-3">Account Owner</th>
+              <th className="px-4 py-3">Work Lead</th>
+              <th className="px-4 py-3">Brought By</th>
               <th className="px-4 py-3 text-right">Retainer / Mo</th>
               <th className="px-4 py-3 text-right">Outstanding</th>
               <th className="px-4 py-3">Next Action</th>
@@ -67,8 +68,21 @@ export function ClientTable({ clients, onOpenClosure }: ClientTableProps) {
 
                   <td className="px-4 py-3 text-[#555555]">{c.industry}</td>
 
-                  <td className="px-4 py-3 text-[#171717] font-medium">
-                    {c.account_manager_name || 'Unassigned'}
+                  <td className="px-4 py-3">
+                    <span className="font-semibold text-[#171717]">{c.account_manager_name || 'Unassigned'}</span>
+                    <span className="block text-[10px] text-[#777777]">
+                      {c.account_manager_name === 'Shammas'
+                        ? 'Web Dev & Prod'
+                        : c.account_manager_name === 'Shadin'
+                        ? 'Branding & Design'
+                        : 'Studio Lead'}
+                    </span>
+                  </td>
+
+                  <td className="px-4 py-3">
+                    <span className="inline-block px-2 py-0.5 rounded bg-[#F7F6F2] border border-[#E6E4DE] text-[11px] font-mono font-medium text-[#171717]">
+                      {c.sales_owner_name || c.referring_person || 'Direct'}
+                    </span>
                   </td>
 
                   <td className="px-4 py-3 text-right font-mono font-semibold text-[#171717]">

@@ -65,6 +65,7 @@ export interface Client {
   account_manager_id: string;
   account_manager_name?: string;
   sales_owner_id?: string;
+  sales_owner_name?: string;
   services: ServiceType[];
   acquisition_source_id: string;
   acquisition_source_name?: string;

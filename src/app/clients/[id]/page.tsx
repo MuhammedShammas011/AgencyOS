@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, use } from 'react';
+import React, { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/shell/app-shell';
@@ -8,6 +8,7 @@ import { useAgencyStore } from '@/lib/context/agency-store-context';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Modal } from '@/components/ui/modal';
 import { ClientClosureModal } from '@/components/retention/client-closure-modal';
 import {
   ArrowLeft,
@@ -48,11 +49,18 @@ function ClientProfileContent({ params }: { params: Promise<{ id: string }> }) {
     interactions,
     activityLogs,
     addClientInteraction,
+    updateClient,
     users
   } = useAgencyStore();
 
   const [activeTab, setActiveTab] = useState<'overview' | 'commercials' | 'delivery' | 'relationship' | 'history'>('overview');
   const [isClosureModalOpen, setIsClosureModalOpen] = useState(false);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+
+  // Assignment states
+  const [selectedWorkOwnerId, setSelectedWorkOwnerId] = useState('');
+  const [selectedBroughtBy, setSelectedBroughtBy] = useState('');
+  const [assignmentNotes, setAssignmentNotes] = useState('');
 
   // New interaction form state
   const [newInteractionType, setNewInteractionType] = useState<'Meeting' | 'Call' | 'Email' | 'Deliverable Review' | 'Feedback' | 'Complaint'>('Meeting');
@@ -61,6 +69,13 @@ function ClientProfileContent({ params }: { params: Promise<{ id: string }> }) {
   const [newInteractionSentiment, setNewInteractionSentiment] = useState<'positive' | 'neutral' | 'concerned' | 'escalated'>('neutral');
 
   const client = clients.find((c) => c.id === clientId);
+
+  useEffect(() => {
+    if (client) {
+      setSelectedWorkOwnerId(client.account_manager_id);
+      setSelectedBroughtBy(client.sales_owner_name || client.referring_person || 'Shahil Mohammed');
+    }
+  }, [client]);
 
   if (!client) {
     return (
@@ -83,6 +98,21 @@ function ClientProfileContent({ params }: { params: Promise<{ id: string }> }) {
   const clientInvoices = invoices.filter((i) => i.client_id === client.id || i.client_name === client.name);
   const clientInteractions = interactions.filter((inter) => inter.client_id === client.id);
   const clientLogs = activityLogs.filter((log) => log.entity_id === client.id || log.entity_name === client.name);
+
+  const handleSaveAssignment = () => {
+    const chosenUser = users.find((u) => u.id === selectedWorkOwnerId);
+    const chosenOwner = users.find((u) => u.name === selectedBroughtBy);
+
+    updateClient(client.id, {
+      account_manager_id: selectedWorkOwnerId,
+      account_manager_name: chosenUser ? chosenUser.name : client.account_manager_name,
+      sales_owner_name: selectedBroughtBy,
+      referring_person: selectedBroughtBy,
+      sales_owner_id: chosenOwner ? chosenOwner.id : undefined,
+    });
+
+    setIsAssignModalOpen(false);
+  };
 
   const handleCreateInteraction = (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,12 +174,22 @@ function ClientProfileContent({ params }: { params: Promise<{ id: string }> }) {
 
             {/* Quick Actions & Status Triggers */}
             <div className="flex items-center gap-2 self-start md:self-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsAssignModalOpen(true)}
+                className="gap-1.5 text-xs bg-[#1C1C1A] text-[#D7FF64] border-[#2A2A28] hover:bg-[#2A2A28] cursor-pointer"
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                Assign Work & Attribution
+              </Button>
+
               {client.status !== 'lost' && (
                 <Button
                   variant="danger"
                   size="sm"
                   onClick={() => setIsClosureModalOpen(true)}
-                  className="gap-1.5 text-xs"
+                  className="gap-1.5 text-xs cursor-pointer"
                 >
                   <ShieldAlert className="w-3.5 h-3.5" />
                   Mark as Lost (Exit Protocol)
@@ -165,14 +205,24 @@ function ClientProfileContent({ params }: { params: Promise<{ id: string }> }) {
               <span className="text-base font-bold text-[#171717]">{client.health_score} / 100</span>
             </div>
             <div>
-              <span className="text-[10px] text-[#777777] uppercase block">Account Director</span>
+              <span className="text-[10px] text-[#777777] uppercase block">Work Responsibility</span>
               <span className="text-sm font-semibold text-[#171717] truncate block">
                 {client.account_manager_name || 'Unassigned'}
               </span>
+              <span className="text-[10px] text-[#777777] block">
+                {client.account_manager_name === 'Shammas'
+                  ? 'Web Dev & Production'
+                  : client.account_manager_name === 'Shadin'
+                  ? 'Branding & Design'
+                  : 'Studio Lead'}
+              </span>
             </div>
             <div>
-              <span className="text-[10px] text-[#777777] uppercase block">Lifetime Value (LTV)</span>
-              <span className="text-base font-bold text-[#171717]">{formatCurrency(client.lifetime_value)}</span>
+              <span className="text-[10px] text-[#777777] uppercase block">Brought By (Lead Acquirer)</span>
+              <span className="text-sm font-semibold text-[#171717] truncate block">
+                {client.sales_owner_name || client.referring_person || 'Direct'}
+              </span>
+              <span className="text-[10px] text-[#777777] block">Lead Attribution</span>
             </div>
             <div>
               <span className="text-[10px] text-[#777777] uppercase block">Outstanding Balance</span>
@@ -528,6 +578,78 @@ function ClientProfileContent({ params }: { params: Promise<{ id: string }> }) {
         onClose={() => setIsClosureModalOpen(false)}
         client={client}
       />
+
+      {/* Admin Work Assignment & Lead Attribution Modal */}
+      <Modal
+        isOpen={isAssignModalOpen}
+        onClose={() => setIsAssignModalOpen(false)}
+        title="Assign Client Work & Lead Attribution"
+        description="Admin controls to assign the execution lead responsible for delivery and track who originated the client."
+        maxWidth="lg"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-[#171717] mb-1">
+              Responsible Work Lead (Execution & Delivery) *
+            </label>
+            <select
+              value={selectedWorkOwnerId}
+              onChange={(e) => setSelectedWorkOwnerId(e.target.value)}
+              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
+            >
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} — {u.title}
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-[#777777] mt-1">
+              Assign <strong>Shammas</strong> for Web Development & Production, or <strong>Shadin</strong> for Branding.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#171717] mb-1">
+              Who Brought That Client (Lead Acquirer / Attribution) *
+            </label>
+            <select
+              value={selectedBroughtBy}
+              onChange={(e) => setSelectedBroughtBy(e.target.value)}
+              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
+            >
+              <option value="Shahil Mohammed">Shahil Mohammed (Business Development & Growth)</option>
+              <option value="Irshad Puthiyakath">Irshad Puthiyakath (Client Acquisition & Partnerships)</option>
+              <option value="Nihal">Nihal (Strategic Growth & Inbound)</option>
+              <option value="Direct Inbound">Direct Inbound / Organic Referral</option>
+            </select>
+            <p className="text-[10px] text-[#777777] mt-1">
+              Attributed sales partner who acquired this account.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-[#171717] mb-1">
+              Assignment & Transition Notes (Optional)
+            </label>
+            <textarea
+              value={assignmentNotes}
+              onChange={(e) => setAssignmentNotes(e.target.value)}
+              placeholder="e.g. Assigned to Shammas for full-stack Next.js production sprint. Brought in by Shahil."
+              rows={3}
+              className="w-full text-xs p-3 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E6E4DE]">
+            <Button variant="secondary" size="sm" onClick={() => setIsAssignModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="chartreuse" size="sm" onClick={handleSaveAssignment}>
+              Save Work Assignment
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </AppShell>
   );
 }

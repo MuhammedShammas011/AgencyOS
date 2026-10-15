@@ -166,21 +166,26 @@ export function ClientFormModal({ isOpen, onClose }: ClientFormModalProps) {
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">Dedicated Account Director *</label>
+            <label className="block text-xs font-semibold text-[#171717] mb-1">
+              Responsible Work Lead *
+            </label>
             <select
               {...register('account_manager_id')}
               className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
             >
-              <option value="">Select account manager...</option>
+              <option value="">Select responsible lead...</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.name} ({u.title})
+                  {u.name} — {u.title}
                 </option>
               ))}
             </select>
             {errors.account_manager_id && (
               <p className="text-[10px] text-[#E5484D] mt-1">{errors.account_manager_id.message}</p>
             )}
+            <p className="text-[10px] text-[#777777] mt-1">
+              Select <strong>Shammas</strong> for Web Development & Production, or <strong>Shadin</strong> for Branding.
+            </p>
           </div>
         </div>
 
@@ -220,7 +225,7 @@ export function ClientFormModal({ isOpen, onClose }: ClientFormModalProps) {
           </div>
         </div>
 
-        {/* Acquisition Source & Referrer separation */}
+        {/* Acquisition Source & Who Brought Client */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[#E6E4DE]">
           <div>
             <label className="block text-xs font-semibold text-[#171717] mb-1">Acquisition Channel *</label>
@@ -228,22 +233,30 @@ export function ClientFormModal({ isOpen, onClose }: ClientFormModalProps) {
               {...register('acquisition_source_name')}
               className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
             >
-              <option value="Instagram Inbound">Instagram Inbound</option>
-              <option value="Website Inquiry">Website Inquiry</option>
               <option value="Referral">Client / Peer Referral</option>
-              <option value="Meta Ads">Meta Performance Ads</option>
               <option value="Direct Outreach">Direct Outreach</option>
+              <option value="Website Inquiry">Website Inquiry</option>
+              <option value="Instagram Inbound">Instagram Inbound</option>
               <option value="Networking">Networking / Event</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">Referring Person (if any)</label>
-            <input
+            <label className="block text-xs font-semibold text-[#171717] mb-1">
+              Client Brought By (Lead Acquirer) *
+            </label>
+            <select
               {...register('referring_person')}
-              placeholder="e.g. Siddharth Mittal"
               className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
-            />
+            >
+              <option value="Shahil Mohammed">Shahil Mohammed (Business Development)</option>
+              <option value="Irshad Puthiyakath">Irshad Puthiyakath (Client Partnerships)</option>
+              <option value="Nihal">Nihal (Strategic Growth)</option>
+              <option value="Direct Inbound">Direct Inbound / Organic</option>
+            </select>
+            <p className="text-[10px] text-[#777777] mt-1">
+              Tracks attribution for sales commission & originator logs.
+            </p>
           </div>
         </div>
 

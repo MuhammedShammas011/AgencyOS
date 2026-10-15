@@ -105,7 +105,7 @@ interface AgencyStoreContextType {
 
 const AgencyStoreContext = createContext<AgencyStoreContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_KEY = 'agency_os_store_v1';
+const LOCAL_STORAGE_KEY = 'agency_os_store_v3';
 
 export function AgencyStoreProvider({ children }: { children: ReactNode }) {
   // Current user role simulator
@@ -310,6 +310,8 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
       acquisition_source_id: clientData.acquisition_source_id || 'source_direct',
       acquisition_source_name: clientData.acquisition_source_name || 'Direct Outreach',
       referring_person: clientData.referring_person,
+      sales_owner_name: clientData.sales_owner_name || clientData.referring_person,
+      sales_owner_id: clientData.sales_owner_id,
       monthly_retainer: clientData.monthly_retainer || 0,
       project_value: clientData.project_value || 0,
       total_invoiced: 0,

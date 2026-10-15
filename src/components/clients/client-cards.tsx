@@ -121,11 +121,19 @@ export function ClientCards({ clients, onOpenClosure }: ClientCardsProps) {
               )}
             </div>
 
-            {/* Bottom Footer: Account Manager and Links */}
-            <div className="pt-3 border-t border-[#E6E4DE] flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs text-[#777777]">
-                <UserCheck className="w-3.5 h-3.5 text-[#999999]" />
-                <span className="truncate max-w-[120px]">{client.account_manager_name || 'Unassigned'}</span>
+            {/* Bottom Footer: Work Lead and Lead Originator */}
+            <div className="pt-3 border-t border-[#E6E4DE] flex items-center justify-between gap-2">
+              <div className="flex flex-col text-[11px] min-w-0">
+                <div className="flex items-center gap-1.5 font-semibold text-[#171717] truncate">
+                  <UserCheck className="w-3.5 h-3.5 text-[#171717] shrink-0" />
+                  <span>{client.account_manager_name || 'Unassigned'}</span>
+                  <span className="text-[10px] font-normal text-[#777777]">
+                    ({client.account_manager_name === 'Shammas' ? 'Web Dev' : client.account_manager_name === 'Shadin' ? 'Branding' : 'Lead'})
+                  </span>
+                </div>
+                <div className="text-[10px] text-[#777777] font-mono truncate mt-0.5">
+                  Brought by: <strong className="text-[#171717]">{client.sales_owner_name || client.referring_person || 'Direct'}</strong>
+                </div>
               </div>
 
               <div className="flex items-center gap-2">

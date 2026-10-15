@@ -67,8 +67,11 @@ export default function TeamPage() {
         {/* Team Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredUsers.map((member) => {
-            // Associated clients (as account manager)
+            // Associated clients (as account manager / work lead)
             const managedClients = clients.filter((c) => c.account_manager_id === member.id);
+
+            // Sourced clients (as lead originator / brought by)
+            const sourcedClients = clients.filter((c) => c.sales_owner_id === member.id || c.sales_owner_name === member.name || c.referring_person === member.name);
 
             // Assigned deliverables
             const memberDeliverables = deliverables.filter((d) => d.assigned_owner_id === member.id);
@@ -140,17 +143,36 @@ export default function TeamPage() {
                     </div>
                   </div>
 
-                  {/* Assigned Client Chips */}
+                  {/* Assigned Client Chips (Execution Responsibility) */}
                   {managedClients.length > 0 && (
                     <div className="mt-3 space-y-1">
                       <span className="text-[10px] font-mono text-[#777777] uppercase block">
-                        Assigned Client Accounts
+                        Work Responsibility ({managedClients.length})
                       </span>
                       <div className="flex flex-wrap gap-1">
                         {managedClients.map((c) => (
                           <span
                             key={c.id}
-                            className="text-[10px] px-2 py-0.5 rounded bg-[#F7F6F2] border border-[#E6E4DE] text-[#171717]"
+                            className="text-[10px] px-2 py-0.5 rounded bg-[#F7F6F2] border border-[#E6E4DE] text-[#171717] font-medium"
+                          >
+                            {c.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sourced Client Chips (Attribution Originator) */}
+                  {sourcedClients.length > 0 && (
+                    <div className="mt-3 space-y-1">
+                      <span className="text-[10px] font-mono text-[#777777] uppercase block">
+                        Originated / Brought By ({sourcedClients.length})
+                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {sourcedClients.map((c) => (
+                          <span
+                            key={c.id}
+                            className="text-[10px] px-2 py-0.5 rounded bg-[#FAFAF8] border border-[#D7FF64]/60 text-[#171717] font-medium"
                           >
                             {c.name}
                           </span>
