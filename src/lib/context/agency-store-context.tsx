@@ -42,11 +42,27 @@ import {
 import { isPastDate, generateId } from '@/lib/utils';
 import { toast } from 'sonner';
 
+export interface TailscaleEmployeeIdentity {
+  employeeName: string;
+  identified: boolean;
+  roleTitle?: string;
+  department?: string;
+  clientIp?: string;
+  tailscale?: {
+    nodeName: string;
+    fqdn: string;
+    ip: string;
+    displayName?: string;
+  } | null;
+}
+
 interface AgencyStoreContextType {
   // State
   currentUser: UserProfile;
   currentRole: UserRole;
   setCurrentRole: (role: UserRole) => void;
+  employeeIdentity: TailscaleEmployeeIdentity;
+  isLoadingIdentity: boolean;
   timeframe: '7d' | '30d' | '90d' | 'custom';
   setTimeframe: (tf: '7d' | '30d' | '90d' | 'custom') => void;
   
@@ -112,6 +128,14 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
   const [currentRole, setCurrentRole] = useState<UserRole>('admin');
   const [timeframe, setTimeframe] = useState<'7d' | '30d' | '90d' | 'custom'>('30d');
 
+  // Tailscale Verified Employee Identity
+  const [employeeIdentity, setEmployeeIdentity] = useState<TailscaleEmployeeIdentity>({
+    employeeName: 'Unknown Employee',
+    identified: false,
+    roleTitle: 'Verifying Device...',
+  });
+  const [isLoadingIdentity, setIsLoadingIdentity] = useState(true);
+
   // State slices
   const [users, setUsers] = useState<UserProfile[]>(INITIAL_USERS);
   const [clients, setClients] = useState<Client[]>(INITIAL_CLIENTS);
@@ -126,6 +150,50 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
   const [interactions, setInteractions] = useState<ClientInteraction[]>(INITIAL_INTERACTIONS);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(INITIAL_ACTIVITY_LOGS);
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+
+  // Server-verified Tailscale Device Identity Fetch
+  useEffect(() => {
+    let isMounted = true;
+    async function resolveTailscaleIdentity() {
+      try {
+        const res = await fetch('/api/auth/tailscale-user', {
+          cache: 'no-store',
+          headers: { 'Accept': 'application/json' },
+        });
+        if (res.ok) {
+          const data: TailscaleEmployeeIdentity = await res.json();
+          if (isMounted) {
+            setEmployeeIdentity(data);
+          }
+        } else {
+          if (isMounted) {
+            setEmployeeIdentity({
+              employeeName: 'Unknown Employee',
+              identified: false,
+              roleTitle: 'Unregistered Device',
+            });
+          }
+        }
+      } catch {
+        if (isMounted) {
+          setEmployeeIdentity({
+            employeeName: 'Unknown Employee',
+            identified: false,
+            roleTitle: 'Unverified Network',
+          });
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingIdentity(false);
+        }
+      }
+    }
+
+    resolveTailscaleIdentity();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Restore from localStorage if available
   useEffect(() => {
