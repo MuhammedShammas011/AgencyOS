@@ -17,6 +17,14 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'Agency OS — Internal Agency Intelligence Platform',
   description: 'Proprietary operating system and command center for high-end creative, marketing, and design agencies.',
+  icons: {
+    icon: [
+      { url: '/Branding/Group.svg', type: 'image/svg+xml' },
+      { url: '/favicon.ico', sizes: 'any' },
+    ],
+    shortcut: '/Branding/Group.svg',
+    apple: '/Branding/Group.svg',
+  },
 };
 
 export default function RootLayout({
