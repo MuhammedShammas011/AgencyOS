@@ -19,7 +19,11 @@ import {
   Clock,
   Server,
   Lock,
-  Layers
+  Layers,
+  Network,
+  Globe,
+  Share2,
+  ExternalLink
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -54,6 +58,11 @@ export default function SettingsPage() {
       })
       .catch(() => {});
   }, []);
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success(`${label} copied to clipboard!`);
+  };
 
   const handleCopySql = () => {
     navigator.clipboard.writeText(`-- Agency OS Database Schema
@@ -224,6 +233,92 @@ export default function SettingsPage() {
                     <div><span className="text-[#171717] font-semibold">npm run db:seed</span> <span className="text-[#888888]"># Seed Initial Data</span></div>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* Tailscale Private Mesh Network Card */}
+            <div className="p-5 bg-[#FFFFFF] rounded-xl border border-[#E6E4DE] shadow-2xs space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-lg bg-[#1C1C1A] text-[#D7FF64]">
+                    <Network className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-[#171717] flex items-center gap-2">
+                      Tailscale Private Mesh Network
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#F0FDF4] text-[#15803D] border border-[#BBF7D0]">
+                        PEER-TO-PEER ENCRYPTED
+                      </span>
+                    </h3>
+                    <p className="text-xs text-[#777777]">
+                      Node: <strong className="text-[#171717] font-mono">shammass-macbook-pro</strong> • Tailscale IP:{' '}
+                      <strong className="text-[#171717] font-mono">100.84.151.95</strong> • Partners on your tailnet can access your local instance
+                    </p>
+                  </div>
+                </div>
+
+                <Badge variant="success">
+                  TAILSCALE ONLINE
+                </Badge>
+              </div>
+
+              {/* Partner Endpoints Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                {/* Web App Endpoint */}
+                <div className="p-3 bg-[#FAFAF8] rounded-lg border border-[#E6E4DE] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-[#171717] flex items-center gap-1.5">
+                      <Globe className="w-3.5 h-3.5 text-[#30A46C]" />
+                      Partner Web Dashboard URL
+                    </span>
+                    <button
+                      onClick={() => copyToClipboard('http://100.84.151.95:3000', 'Partner Web URL')}
+                      className="text-[10px] font-mono text-[#555555] hover:text-[#171717] hover:underline flex items-center gap-1"
+                    >
+                      <Copy className="w-2.5 h-2.5" /> Copy
+                    </button>
+                  </div>
+                  <div className="p-2 bg-[#FFFFFF] rounded border border-[#E6E4DE] font-mono text-xs text-[#171717] select-all truncate">
+                    http://100.84.151.95:3000
+                  </div>
+                  <p className="text-[10px] text-[#777777]">
+                    MagicDNS alias: <code className="text-[#171717]">http://shammass-macbook-pro:3000</code>
+                  </p>
+                </div>
+
+                {/* PostgreSQL Endpoint */}
+                <div className="p-3 bg-[#FAFAF8] rounded-lg border border-[#E6E4DE] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-[#171717] flex items-center gap-1.5">
+                      <Database className="w-3.5 h-3.5 text-[#3B82F6]" />
+                      Partner Direct PostgreSQL URL
+                    </span>
+                    <button
+                      onClick={() =>
+                        copyToClipboard('postgresql://shammas@100.84.151.95:5432/agency_os', 'PostgreSQL Connection URL')
+                      }
+                      className="text-[10px] font-mono text-[#555555] hover:text-[#171717] hover:underline flex items-center gap-1"
+                    >
+                      <Copy className="w-2.5 h-2.5" /> Copy
+                    </button>
+                  </div>
+                  <div className="p-2 bg-[#FFFFFF] rounded border border-[#E6E4DE] font-mono text-xs text-[#171717] select-all truncate">
+                    postgresql://shammas@100.84.151.95:5432/agency_os
+                  </div>
+                  <p className="text-[10px] text-[#777777]">
+                    For TablePlus, DBeaver, or partner backend scripts on your Tailnet.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step-by-Step Sharing Instructions */}
+              <div className="p-3 bg-[#F7F6F2] rounded-lg border border-[#E6E4DE] space-y-1 text-xs text-[#555555]">
+                <span className="font-semibold text-[#171717] block text-[11px]">How to connect partner systems:</span>
+                <ol className="list-decimal list-inside space-y-0.5 text-[11px] text-[#666666]">
+                  <li>Have partners install Tailscale on their laptops/PCs and sign in to your Tailnet (or share this node in Tailscale admin).</li>
+                  <li>Partners can immediately navigate to <strong className="text-[#171717] font-mono">http://100.84.151.95:3000</strong> in any web browser.</li>
+                  <li>Traffic is end-to-end WireGuard encrypted through your private Tailscale mesh. No port forwarding needed.</li>
+                </ol>
               </div>
             </div>
 
