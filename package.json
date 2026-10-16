@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:migrate": "/opt/homebrew/opt/postgresql@16/bin/psql -d agency_os -f scripts/schema-postgres.sql",
+    "db:seed": "tsx scripts/seed-postgres.ts",
+    "db:setup": "/opt/homebrew/opt/postgresql@16/bin/psql -d agency_os -f scripts/schema-postgres.sql && tsx scripts/seed-postgres.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",
@@ -19,6 +22,7 @@
     "date-fns": "^4.4.0",
     "lucide-react": "^1.57.0",
     "next": "16.4.1",
+    "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-hook-form": "^7.90.0",
@@ -30,11 +34,13 @@
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.1",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }
