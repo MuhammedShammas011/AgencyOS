@@ -19,11 +19,12 @@ export const metadata: Metadata = {
   description: 'Proprietary operating system and command center for high-end creative, marketing, and design agencies.',
   icons: {
     icon: [
-      { url: '/Branding/Group.svg', type: 'image/svg+xml' },
+      { url: '/Branding/Group.png', type: 'image/png' },
+      { url: '/icon.png', type: 'image/png' },
       { url: '/favicon.ico', sizes: 'any' },
     ],
-    shortcut: '/Branding/Group.svg',
-    apple: '/Branding/Group.svg',
+    shortcut: '/Branding/Group.png',
+    apple: '/Branding/Group.png',
   },
 };
 
