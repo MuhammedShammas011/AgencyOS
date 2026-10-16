@@ -1,16 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
-  const headersObj: Record<string, string> = {};
-  req.headers.forEach((value, key) => {
-    headersObj[key] = value;
-  });
+  const keys = Object.keys(req);
+  const symbols = Object.getOwnPropertySymbols(req).map((s) => s.toString());
+  
+  // Also check if any symbol has socket or request
+  const inspected: Record<string, any> = {};
+  for (const sym of Object.getOwnPropertySymbols(req)) {
+    try {
+      const val = (req as any)[sym];
+      inspected[sym.toString()] = typeof val === 'object' ? Object.keys(val || {}) : typeof val;
+    } catch (e) {
+      // ignore
+    }
+  }
 
   return NextResponse.json({
-    // @ts-expect-error inspecting req properties
-    reqIp: req.ip,
-    // @ts-expect-error inspecting req properties
-    reqSocketRemoteAddress: req.socket?.remoteAddress,
-    headers: headersObj,
+    keys,
+    symbols,
+    inspected,
+    headers: Object.fromEntries(req.headers.entries())
   });
 }
