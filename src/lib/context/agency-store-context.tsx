@@ -191,7 +191,7 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
     }).length;
 
     // Payments due in current 7 days or overdue
-    const today = typeof window !== 'undefined' ? new Date() : new Date('2026-10-15T12:00:00Z');
+    const today = typeof window === 'undefined' ? new Date('2026-10-15T12:00:00Z') : new Date();
     const next7Days = new Date(today);
     next7Days.setDate(today.getDate() + 7);
 
@@ -217,7 +217,7 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
     const activeClients = activeClientsList.length;
     
     // New clients this month (start date within current month)
-    const now = typeof window !== 'undefined' ? new Date() : new Date('2026-10-15T12:00:00Z');
+    const now = typeof window === 'undefined' ? new Date('2026-10-15T12:00:00Z') : new Date();
     const curYear = now.getFullYear();
     const curMonth = now.getMonth();
     const newClientsThisMonth = clients.filter((c) => {

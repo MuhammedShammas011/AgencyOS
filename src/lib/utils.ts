@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { format, formatDistanceToNow, parseISO, isAfter, isBefore } from 'date-fns';
+import { format, formatDistanceToNow, parseISO, isBefore } from 'date-fns';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -63,7 +63,7 @@ export function isPastDate(dateString?: string | null, referenceDate?: Date): bo
   if (!dateString) return false;
   try {
     const d = typeof dateString === 'string' ? parseISO(dateString) : dateString;
-    const ref = referenceDate || (typeof window !== 'undefined' ? new Date() : new Date('2026-10-15T12:00:00Z'));
+    const ref = referenceDate || (typeof window === 'undefined' ? new Date('2026-10-15T12:00:00Z') : new Date());
     return isBefore(d, ref);
   } catch {
     return false;
@@ -75,12 +75,8 @@ export function getTodayDateString(): string {
   return new Date().toISOString().split('T')[0];
 }
 
-let ssrIdCounter = 1000;
 export function generateId(prefix: string = 'id'): string {
-  if (typeof window === 'undefined') {
-    ssrIdCounter += 1;
-    return `${prefix}_ssr_${ssrIdCounter}`;
-  }
   const rand = Math.random().toString(36).substring(2, 11);
   return `${prefix}_${rand}`;
 }
+

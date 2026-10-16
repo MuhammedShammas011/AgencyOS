@@ -36,11 +36,11 @@ export function TopHeader({ onQuickAction, showEditorialBanner = true }: TopHead
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-xs font-mono text-[#777777]">
               <Calendar className="w-3.5 h-3.5 text-[#999999]" />
-              <span>{todayStr}</span>
+              <span suppressHydrationWarning>{todayStr}</span>
             </div>
             <span className="text-[#D1CFC7] hidden md:inline">•</span>
             <span className="text-xs text-[#777777] hidden md:inline">
-              Workspace: <strong className="text-[#171717] font-medium">Headquarters (Mumbai & Global)</strong>
+              Workspace: <strong className="text-[#171717] font-medium">MOWS CO-WORKING SPACE, Manjeri</strong>
             </span>
           </div>
 
@@ -119,11 +119,10 @@ export function TopHeader({ onQuickAction, showEditorialBanner = true }: TopHead
                 <button
                   key={tf}
                   onClick={() => setTimeframe(tf)}
-                  className={`px-3 py-1 text-xs font-mono rounded-md transition-all ${
-                    timeframe === tf
+                  className={`px-3 py-1 text-xs font-mono rounded-md transition-all ${timeframe === tf
                       ? 'bg-[#1C1C1A] text-[#D7FF64] font-semibold shadow-xs'
                       : 'text-[#777777] hover:text-[#171717] hover:bg-[#F2EFE9]'
-                  }`}
+                    }`}
                 >
                   {tf.toUpperCase()}
                 </button>

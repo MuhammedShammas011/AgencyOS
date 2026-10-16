@@ -1,8 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAgencyStore } from '@/lib/context/agency-store-context';
-import { formatRelativeTime } from '@/lib/utils';
+import { formatRelativeTime, formatDate } from '@/lib/utils';
 import {
   Activity,
   FileCheck,
@@ -18,6 +18,12 @@ import Link from 'next/link';
 
 export function ActivityStream() {
   const { activityLogs } = useAgencyStore();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
 
   const getActionIcon = (actionType: string) => {
     switch (actionType) {
@@ -74,8 +80,8 @@ export function ActivityStream() {
                 <span className="text-xs font-semibold text-[#171717] truncate">
                   {log.actor_name}
                 </span>
-                <span className="text-[10px] font-mono text-[#888888] shrink-0">
-                  {formatRelativeTime(log.created_at)}
+                <span className="text-[10px] font-mono text-[#888888] shrink-0" suppressHydrationWarning>
+                  {mounted ? formatRelativeTime(log.created_at) : formatDate(log.created_at, 'MMM dd')}
                 </span>
               </div>
               <p className="text-xs text-[#555555] line-clamp-1 mt-0.5">
