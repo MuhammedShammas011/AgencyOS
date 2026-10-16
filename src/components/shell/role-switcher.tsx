@@ -3,11 +3,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UserRole } from '@/lib/types';
 import { useAgencyStore } from '@/lib/context/agency-store-context';
-import { ShieldCheck, ChevronDown, Check, User } from 'lucide-react';
+import { ShieldCheck, ChevronDown, Check, Wifi, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function RoleSwitcher() {
-  const { currentRole, setCurrentRole, currentUser, users } = useAgencyStore();
+  const { currentRole, setCurrentRole, currentUser, employeeIdentity, isLoadingIdentity } = useAgencyStore();
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -33,31 +33,86 @@ export function RoleSwitcher() {
     { role: 'finance', title: 'Finance Controller', desc: 'Invoices, aging schedules, partial payments & expenses' },
   ];
 
+  const displayName = isLoadingIdentity
+    ? 'Checking Device...'
+    : currentUser.name || 'Unknown Employee';
+
+  const isVerified = employeeIdentity.identified;
+  const deviceName = employeeIdentity.tailscale?.nodeName || (isVerified ? 'Tailscale Device' : 'Unregistered');
+
   return (
     <div className="relative" ref={menuRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] hover:bg-[#F7F6F2] transition-colors text-xs text-[#171717]"
+        title={isVerified ? `Verified via Tailscale (${deviceName})` : 'Unregistered Tailscale device'}
       >
-        <div className="w-5 h-5 rounded-full bg-[#1C1C1A] text-[#D7FF64] flex items-center justify-center text-[10px] font-mono font-bold">
-          {currentUser.name.charAt(0)}
+        <div className="relative">
+          <div className="w-5 h-5 rounded-full bg-[#1C1C1A] text-[#D7FF64] flex items-center justify-center text-[10px] font-mono font-bold">
+            {displayName.charAt(0)}
+          </div>
+          {/* Server-verified identity indicator dot */}
+          <span
+            className={cn(
+              'absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-white ring-1 ring-white',
+              isVerified ? 'bg-[#30A46C]' : 'bg-[#E5484D]'
+            )}
+          />
         </div>
+
         <div className="text-left hidden sm:block">
-          <div className="font-semibold leading-tight text-[#171717]">{currentUser.name}</div>
-          <div className="text-[10px] font-mono text-[#777777] uppercase leading-none">{currentRole.replace('_', ' ')}</div>
+          <div className="font-semibold leading-tight text-[#171717] flex items-center gap-1.5">
+            <span>{displayName}</span>
+          </div>
+          <div className="text-[10px] font-mono text-[#777777] uppercase leading-none">
+            {isVerified ? deviceName : 'Unknown Employee'}
+          </div>
         </div>
         <ChevronDown className="w-3.5 h-3.5 text-[#777777] ml-0.5" />
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-11 w-72 bg-[#FFFFFF] rounded-xl border border-[#E6E4DE] shadow-xl z-50 animate-fade-in py-2 overflow-hidden">
+        <div className="absolute right-0 top-11 w-80 bg-[#FFFFFF] rounded-xl border border-[#E6E4DE] shadow-xl z-50 animate-fade-in py-2 overflow-hidden">
+          {/* Server-Verified Tailscale Identity Card */}
+          <div className="px-3 py-2.5 mx-2 mb-2 rounded-lg bg-[#F7F6F2] border border-[#E6E4DE]">
+            <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-[#777777] mb-1">
+              <span className="flex items-center gap-1">
+                <Wifi className="w-3 h-3 text-[#555555]" />
+                Tailscale Identity
+              </span>
+              <span
+                className={cn(
+                  'px-1.5 py-0.5 rounded text-[9px] font-semibold tracking-normal',
+                  isVerified
+                    ? 'bg-[#E6F4EA] text-[#137333] border border-[#CEEAD6]'
+                    : 'bg-[#FCE8E6] text-[#C5221F] border border-[#FAD2CF]'
+                )}
+              >
+                {isVerified ? 'Verified Device' : 'Unregistered'}
+              </span>
+            </div>
+            <div className="font-semibold text-sm text-[#171717]">{displayName}</div>
+            <div className="text-[11px] text-[#555555] font-mono mt-0.5 flex items-center justify-between">
+              <span>Node: {deviceName}</span>
+              {employeeIdentity.tailscale?.ip && (
+                <span className="text-[#888888]">{employeeIdentity.tailscale.ip}</span>
+              )}
+            </div>
+            {!isVerified && (
+              <div className="mt-1.5 pt-1.5 border-t border-[#E6E4DE] text-[10px] text-[#C5221F] flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 shrink-0" />
+                <span>Device is not registered in employee registry</span>
+              </div>
+            )}
+          </div>
+
           <div className="px-3 py-1.5 border-b border-[#E6E4DE] mb-1">
             <span className="text-[10px] font-mono uppercase text-[#777777] tracking-wider">
               Simulate Role Permissions
             </span>
           </div>
 
-          <div className="max-h-72 overflow-y-auto">
+          <div className="max-h-64 overflow-y-auto">
             {roles.map((r) => {
               const isSelected = currentRole === r.role;
               return (

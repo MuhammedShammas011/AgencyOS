@@ -244,11 +244,32 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
     }
   }, [clients, leads, proposals, projects, tasks, deliverables, invoices, expenses, clientClosures, interactions, activityLogs, notifications, currentRole]);
 
-  // Current active user based on simulated role
+  // Current active user based on simulated role and server-verified Tailscale employee
   const currentUser = useMemo(() => {
-    const found = users.find((u) => u.role === currentRole);
-    return found || users[0];
-  }, [users, currentRole]);
+    // If Tailscale has identified a registered employee, match their user profile
+    if (employeeIdentity.identified && employeeIdentity.employeeName) {
+      const foundEmployee = users.find(
+        (u) => u.name.toLowerCase() === employeeIdentity.employeeName.toLowerCase()
+      );
+      if (foundEmployee) {
+        return foundEmployee;
+      }
+      const fallback = users.find((u) => u.role === currentRole) || users[0];
+      return {
+        ...fallback,
+        name: employeeIdentity.employeeName,
+        title: employeeIdentity.roleTitle || fallback.title,
+      };
+    }
+
+    // If unverified, unregistered, or unknown device, display "Unknown Employee"
+    const fallback = users.find((u) => u.role === currentRole) || users[0];
+    return {
+      ...fallback,
+      name: 'Unknown Employee',
+      title: 'Unregistered Tailscale Device',
+    };
+  }, [users, currentRole, employeeIdentity]);
 
   // Dynamic Operational Summary calculation (strictly computed, never hardcoded!)
   const operationalSummary = useMemo<OperationalSummary>(() => {
@@ -994,6 +1015,8 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
         currentUser,
         currentRole,
         setCurrentRole,
+        employeeIdentity,
+        isLoadingIdentity,
         timeframe,
         setTimeframe,
         users,
