@@ -29,10 +29,28 @@ export type ServiceType =
   | 'Graphic & Motion Design'
   | 'Video Production'
   | 'Brand Identity & Strategy'
+  | 'Rebranding'
+  | 'UI/UX Design'
   | 'Website & App Development'
   | 'Performance Marketing & SEO'
   | 'Commercial Photography'
-  | 'Influencer & PR Campaigns';
+  | 'Influencer & PR Campaigns'
+  | 'Content Creation'
+  | 'Logo Design';
+
+export type WorkStatus = 'not_started' | 'in_progress' | 'review' | 'completed' | 'on_hold';
+
+export interface ClientWorkItem {
+  id: string;
+  client_id: string;
+  title: string;
+  service: ServiceType | string;
+  status: WorkStatus;
+  progress: number; // 0–100
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface ClientContact {
   id: string;
@@ -62,6 +80,8 @@ export interface Client {
   industry: string;
   status: ClientStatus;
   health_score: number; // 0 - 100
+  email?: string;
+  phone?: string;
   account_manager_id: string;
   account_manager_name?: string;
   sales_owner_id?: string;
@@ -83,6 +103,10 @@ export interface Client {
   website?: string;
   address?: string;
   internal_notes?: string;
+  // Simplified payment management fields
+  agreed_amount?: number;
+  payment_due_date?: string;
+  last_payment_date?: string;
   created_at: string;
   updated_at: string;
 }
@@ -419,6 +443,15 @@ export interface ClientInteraction {
   recorded_by_name: string;
   action_items?: string[];
   follow_up_date?: string;
+  created_at: string;
+}
+
+export interface ClientPayment {
+  id: string;
+  client_id: string;
+  amount: number;
+  payment_date: string;
+  note?: string;
   created_at: string;
 }
 

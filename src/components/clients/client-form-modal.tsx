@@ -1,32 +1,39 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { useAgencyStore } from '@/lib/context/agency-store-context';
-import { ServiceType, ClientStatus } from '@/lib/types';
+import { Client, ServiceType } from '@/lib/types';
 import { getTodayDateString } from '@/lib/utils';
 
+const SERVICE_OPTIONS: ServiceType[] = [
+  'Brand Identity & Strategy',
+  'Rebranding',
+  'UI/UX Design',
+  'Logo Design',
+  'Graphic & Motion Design',
+  'Social Media Management',
+  'Content Creation',
+  'Video Production',
+  'Website & App Development',
+  'Performance Marketing & SEO',
+  'Commercial Photography',
+  'Influencer & PR Campaigns',
+];
+
 const clientSchema = z.object({
-  name: z.string().min(2, 'Client name is required'),
-  company: z.string().min(2, 'Company legal name is required'),
-  contactPerson: z.string().min(2, 'Contact person name is required'),
-  email: z.string().email('Invalid email address'),
+  company: z.string().min(1, 'Company name is required'),
+  name: z.string().min(1, 'Contact person is required'),
   phone: z.string().optional(),
-  industry: z.string().min(2, 'Industry is required'),
-  services: z.array(z.string()).min(1, 'Select at least one service'),
-  acquisition_source_name: z.string().min(1, 'Acquisition channel is required'),
-  referring_person: z.string().optional(),
-  account_manager_id: z.string().min(1, 'Account manager must be assigned'),
-  monthly_retainer: z.coerce.number().min(0),
-  project_value: z.coerce.number().min(0),
-  contract_start_date: z.string().min(1, 'Contract start date is required'),
-  contract_end_date: z.string().optional(),
-  status: z.enum(['active', 'onboarding', 'at_risk', 'paused', 'lost', 'completed']),
-  internal_notes: z.string().optional(),
+  email: z.string().email('Invalid email').or(z.literal('')).optional(),
+  account_manager_id: z.string().min(1, 'Please assign a team member'),
+  agreed_amount: z.coerce.number().min(0),
+  payment_due_date: z.string().optional(),
+  services: z.array(z.string()).optional(),
 });
 
 type ClientFormData = z.infer<typeof clientSchema>;
@@ -34,44 +41,36 @@ type ClientFormData = z.infer<typeof clientSchema>;
 interface ClientFormModalProps {
   isOpen: boolean;
   onClose: () => void;
+  client?: Client | null;
 }
 
-export function ClientFormModal({ isOpen, onClose }: ClientFormModalProps) {
-  const { addClient, users } = useAgencyStore();
-
-  const serviceOptions: ServiceType[] = [
-    'Brand Identity & Strategy',
-    'Social Media Management',
-    'Video Production',
-    'Graphic & Motion Design',
-    'Website & App Development',
-    'Performance Marketing & SEO',
-    'Commercial Photography',
-    'Influencer & PR Campaigns',
-  ];
+export function ClientFormModal({ isOpen, onClose, client }: ClientFormModalProps) {
+  const { addClient, updateClient, users } = useAgencyStore();
 
   const {
     register,
     handleSubmit,
-    setValue,
-    watch,
     reset,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<ClientFormData>({
     resolver: zodResolver(clientSchema),
     defaultValues: {
-      status: 'onboarding',
-      services: ['Brand Identity & Strategy'],
-      monthly_retainer: 250000,
-      project_value: 0,
-      contract_start_date: getTodayDateString(),
-      acquisition_source_name: 'Direct Outreach',
+      company: '',
+      name: '',
+      phone: '',
+      email: '',
+      account_manager_id: '',
+      agreed_amount: 0,
+      payment_due_date: '',
+      services: [],
     },
   });
 
-  const selectedServices = watch('services') || [];
+  const selectedServices = watch('services') ?? [];
 
-  const handleServiceToggle = (svc: ServiceType) => {
+  const toggleService = (svc: string) => {
     if (selectedServices.includes(svc)) {
       setValue('services', selectedServices.filter((s) => s !== svc));
     } else {
@@ -79,25 +78,57 @@ export function ClientFormModal({ isOpen, onClose }: ClientFormModalProps) {
     }
   };
 
+  useEffect(() => {
+    if (client) {
+      reset({
+        company: client.company || '',
+        name: client.name || '',
+        phone: client.phone || '',
+        email: client.email || '',
+        account_manager_id: client.account_manager_id || '',
+        agreed_amount: client.agreed_amount ?? client.project_value ?? 0,
+        payment_due_date: client.payment_due_date || '',
+        services: client.services || [],
+      });
+    } else {
+      reset({
+        company: '',
+        name: '',
+        phone: '',
+        email: '',
+        account_manager_id: users[0]?.id || '',
+        agreed_amount: 0,
+        payment_due_date: '',
+        services: [],
+      });
+    }
+  }, [client, isOpen, reset, users]);
+
   const onSubmit = (data: ClientFormData) => {
     const assignedUser = users.find((u) => u.id === data.account_manager_id);
 
-    addClient({
-      name: data.name,
+    const payload = {
       company: data.company,
-      industry: data.industry,
-      status: data.status,
-      services: data.services as ServiceType[],
-      acquisition_source_name: data.acquisition_source_name,
-      referring_person: data.referring_person,
+      name: data.name,
+      phone: data.phone,
+      email: data.email,
       account_manager_id: data.account_manager_id,
-      account_manager_name: assignedUser ? assignedUser.name : 'Unassigned',
-      monthly_retainer: data.monthly_retainer,
-      project_value: data.project_value,
-      contract_start_date: data.contract_start_date,
-      contract_end_date: data.contract_end_date,
-      internal_notes: data.internal_notes,
-    });
+      account_manager_name: assignedUser?.name || '',
+      agreed_amount: data.agreed_amount,
+      project_value: data.agreed_amount,
+      payment_due_date: data.payment_due_date || undefined,
+      services: (data.services || []) as ServiceType[],
+      contract_start_date: getTodayDateString(),
+      industry: 'General',
+      status: 'active' as const,
+      acquisition_source_name: 'Direct',
+    };
+
+    if (client) {
+      updateClient(client.id, payload);
+    } else {
+      addClient(payload);
+    }
 
     reset();
     onClose();
@@ -107,174 +138,103 @@ export function ClientFormModal({ isOpen, onClose }: ClientFormModalProps) {
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Onboard New Agency Client"
-      description="Initialize client commercial parameters, services, and operational ownership."
-      maxWidth="2xl"
+      title={client ? 'Edit Client' : 'Add Client'}
+      description={client ? 'Update client information.' : 'Add a new client to your list.'}
+      maxWidth="lg"
     >
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        {/* Core Details */}
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+        {/* Core Info */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">Client Brand Name *</label>
-            <input
-              {...register('name')}
-              placeholder="e.g. Elysian Organics"
-              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
-            />
-            {errors.name && <p className="text-[10px] text-[#E5484D] mt-1">{errors.name.message}</p>}
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">Company Legal Entity *</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Company Name *</label>
             <input
               {...register('company')}
-              placeholder="e.g. Elysian Botanicals Pvt Ltd"
-              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
+              placeholder="e.g. Acme Corp"
+              className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none focus:border-gray-400 transition-colors"
             />
-            {errors.company && <p className="text-[10px] text-[#E5484D] mt-1">{errors.company.message}</p>}
+            {errors.company && <p className="text-xs text-red-500 mt-1">{errors.company.message}</p>}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">Primary Contact Person *</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Contact Person *</label>
             <input
-              {...register('contactPerson')}
-              placeholder="e.g. Maya Sethi (Founder & CMO)"
-              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
+              {...register('name')}
+              placeholder="e.g. John Smith"
+              className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none focus:border-gray-400 transition-colors"
             />
-            {errors.contactPerson && <p className="text-[10px] text-[#E5484D] mt-1">{errors.contactPerson.message}</p>}
+            {errors.name && <p className="text-xs text-red-500 mt-1">{errors.name.message}</p>}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">Official Email Address *</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Phone</label>
             <input
-              type="email"
+              {...register('phone')}
+              placeholder="+91 98765 43210"
+              className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none focus:border-gray-400 transition-colors"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Email</label>
+            <input
               {...register('email')}
-              placeholder="e.g. maya@elysian.com"
-              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
+              placeholder="contact@company.com"
+              className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none focus:border-gray-400 transition-colors"
             />
-            {errors.email && <p className="text-[10px] text-[#E5484D] mt-1">{errors.email.message}</p>}
+            {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email.message}</p>}
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">Industry Vertical *</label>
-            <input
-              {...register('industry')}
-              placeholder="e.g. Luxury Clean Skincare / Fintech"
-              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
-            />
-            {errors.industry && <p className="text-[10px] text-[#E5484D] mt-1">{errors.industry.message}</p>}
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">
-              Responsible Work Lead *
-            </label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Assigned Team Member *</label>
             <select
               {...register('account_manager_id')}
-              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
+              className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none focus:border-gray-400 transition-colors"
             >
-              <option value="">Select responsible lead...</option>
+              <option value="">Select team member</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
-                  {u.name} — {u.title}
+                  {u.name}
                 </option>
               ))}
             </select>
-            {errors.account_manager_id && (
-              <p className="text-[10px] text-[#E5484D] mt-1">{errors.account_manager_id.message}</p>
-            )}
-            <p className="text-[10px] text-[#777777] mt-1">
-              Select <strong>Shammas</strong> for Web Development & Production, or <strong>Shadin</strong> for Branding.
-            </p>
+            {errors.account_manager_id && <p className="text-xs text-red-500 mt-1">{errors.account_manager_id.message}</p>}
           </div>
-        </div>
 
-        {/* Commercials */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-[#E6E4DE]">
           <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">Monthly Retainer (₹)</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Agreed Amount (₹)</label>
             <input
               type="number"
-              {...register('monthly_retainer')}
+              {...register('agreed_amount')}
               placeholder="0"
-              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] font-mono outline-none focus:border-[#171717]"
+              className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none focus:border-gray-400 transition-colors"
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">One-time Project Value (₹)</label>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-gray-700 mb-1">Payment Due Date</label>
             <input
-              type="number"
-              {...register('project_value')}
-              placeholder="0"
-              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] font-mono outline-none focus:border-[#171717]"
+              type="date"
+              {...register('payment_due_date')}
+              className="w-full sm:w-auto text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none focus:border-gray-400 transition-colors"
             />
           </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">Initial Status</label>
-            <select
-              {...register('status')}
-              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
-            >
-              <option value="onboarding">Onboarding</option>
-              <option value="active">Active</option>
-              <option value="at_risk">At Risk</option>
-              <option value="paused">Paused</option>
-            </select>
-          </div>
         </div>
 
-        {/* Acquisition Source & Who Brought Client */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[#E6E4DE]">
-          <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">Acquisition Channel *</label>
-            <select
-              {...register('acquisition_source_name')}
-              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
-            >
-              <option value="Referral">Client / Peer Referral</option>
-              <option value="Direct Outreach">Direct Outreach</option>
-              <option value="Website Inquiry">Website Inquiry</option>
-              <option value="Instagram Inbound">Instagram Inbound</option>
-              <option value="Networking">Networking / Event</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">
-              Client Brought By (Lead Acquirer) *
-            </label>
-            <select
-              {...register('referring_person')}
-              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none focus:border-[#171717]"
-            >
-              <option value="Shahil Mohammed">Shahil Mohammed (Business Development)</option>
-              <option value="Irshad Puthiyakath">Irshad Puthiyakath (Client Partnerships)</option>
-              <option value="Nihal">Nihal (Strategic Growth)</option>
-              <option value="Direct Inbound">Direct Inbound / Organic</option>
-            </select>
-            <p className="text-[10px] text-[#777777] mt-1">
-              Tracks attribution for sales commission & originator logs.
-            </p>
-          </div>
-        </div>
-
-        {/* Services Selection */}
-        <div className="pt-2 border-t border-[#E6E4DE]">
-          <label className="block text-xs font-semibold text-[#171717] mb-2">Contracted Services *</label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {serviceOptions.map((svc) => {
-              const isSelected = selectedServices.includes(svc);
+        {/* Services */}
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-2">Work / Services</label>
+          <div className="flex flex-wrap gap-2">
+            {SERVICE_OPTIONS.map((svc) => {
+              const selected = selectedServices.includes(svc);
               return (
                 <button
                   type="button"
                   key={svc}
-                  onClick={() => handleServiceToggle(svc)}
-                  className={`p-2 rounded-lg border text-left text-[11px] transition-all cursor-pointer ${
-                    isSelected
-                      ? 'border-[#171717] bg-[#1C1C1A] text-[#D7FF64] font-medium'
-                      : 'border-[#E6E4DE] bg-[#FAFAF8] text-[#555555] hover:border-[#BBBBBB]'
+                  onClick={() => toggleService(svc)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                    selected
+                      ? 'bg-gray-900 text-white border-gray-900'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'
                   }`}
                 >
                   {svc}
@@ -282,47 +242,14 @@ export function ClientFormModal({ isOpen, onClose }: ClientFormModalProps) {
               );
             })}
           </div>
-          {errors.services && <p className="text-[10px] text-[#E5484D] mt-1">{errors.services.message}</p>}
         </div>
 
-        {/* Contract Dates & Notes */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[#E6E4DE]">
-          <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">Contract Start Date *</label>
-            <input
-              type="date"
-              {...register('contract_start_date')}
-              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] font-mono outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-[#171717] mb-1">Contract End Date</label>
-            <input
-              type="date"
-              {...register('contract_end_date')}
-              className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] font-mono outline-none"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-semibold text-[#171717] mb-1">Internal Strategic Notes</label>
-          <textarea
-            {...register('internal_notes')}
-            rows={2}
-            placeholder="Special aesthetic requirements, brand guidelines, key executive quirks..."
-            className="w-full text-xs px-3 py-2 rounded-lg border border-[#E6E4DE] bg-[#FFFFFF] outline-none"
-          />
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#E6E4DE]">
+        <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
           <Button variant="secondary" size="sm" type="button" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="chartreuse" size="sm" type="submit" disabled={isSubmitting}>
-            Complete Client Onboarding
+          <Button variant="primary" size="sm" type="submit" disabled={isSubmitting}>
+            {client ? 'Save Changes' : 'Add Client'}
           </Button>
         </div>
       </form>

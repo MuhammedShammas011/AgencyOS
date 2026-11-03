@@ -1,246 +1,143 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { AppShell } from '@/components/shell/app-shell';
 import { useAgencyStore } from '@/lib/context/agency-store-context';
-import { ClientCards } from '@/components/clients/client-cards';
-import { ClientTable } from '@/components/clients/client-table';
-import { ClientLifecycleBoard } from '@/components/clients/client-lifecycle-board';
 import { ClientFormModal } from '@/components/clients/client-form-modal';
-import { ClientClosureModal } from '@/components/retention/client-closure-modal';
-import { Button } from '@/components/ui/button';
+import { Search, Plus } from 'lucide-react';
+import { formatCurrency, formatDate, isPastDate } from '@/lib/utils';
 import { Client } from '@/lib/types';
-import { formatCurrency } from '@/lib/utils';
-import {
-  Users,
-  Search,
-  Filter,
-  LayoutGrid,
-  List,
-  Columns,
-  Plus,
-  ShieldAlert,
-  TrendingUp
-} from 'lucide-react';
+
+function getPaymentStatus(client: Client): 'paid' | 'pending' | 'overdue' {
+  const agreedAmount = client.agreed_amount ?? client.project_value ?? 0;
+  const paid = client.total_paid ?? 0;
+
+  if (paid >= agreedAmount && agreedAmount > 0) return 'paid';
+  if (client.payment_due_date && isPastDate(client.payment_due_date)) return 'overdue';
+  return 'pending';
+}
+
+const statusConfig = {
+  paid: { label: 'Paid', color: 'bg-green-50 text-green-700 border-green-200' },
+  pending: { label: 'Pending', color: 'bg-amber-50 text-amber-700 border-amber-200' },
+  overdue: { label: 'Overdue', color: 'bg-red-50 text-red-700 border-red-200' },
+};
 
 export default function ClientsPage() {
-  const { clients, users } = useAgencyStore();
-  const [viewMode, setViewMode] = useState<'cards' | 'table' | 'board'>('cards');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [ownerFilter, setOwnerFilter] = useState<string>('all');
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [closureTargetClient, setClosureTargetClient] = useState<Client | null>(null);
+  const { clients } = useAgencyStore();
+  const [search, setSearch] = useState('');
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  // Filter clients
-  const filteredClients = clients.filter((c) => {
-    const q = searchQuery.toLowerCase().trim();
-    const matchesSearch =
+  const filtered = clients.filter((c) => {
+    const q = search.toLowerCase();
+    return (
       !q ||
-      c.name.toLowerCase().includes(q) ||
       c.company.toLowerCase().includes(q) ||
-      c.industry.toLowerCase().includes(q);
-
-    const matchesStatus = statusFilter === 'all' || c.status === statusFilter;
-    const matchesOwner = ownerFilter === 'all' || c.account_manager_id === ownerFilter;
-
-    return matchesSearch && matchesStatus && matchesOwner;
+      c.name.toLowerCase().includes(q) ||
+      (c.account_manager_name || '').toLowerCase().includes(q)
+    );
   });
-
-  // Summary counts
-  const totalRetainerMRR = clients
-    .filter((c) => c.status === 'active' || c.status === 'onboarding')
-    .reduce((acc, c) => acc + (c.monthly_retainer || 0), 0);
-
-  const atRiskCount = clients.filter((c) => c.status === 'at_risk').length;
 
   return (
     <AppShell>
-      <div className="space-y-6">
-        {/* Page Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E6E4DE]">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono uppercase tracking-widest text-[#777777] font-semibold">
-                Relationship Registry
-              </span>
-              <span className="w-1.5 h-1.5 rounded-full bg-[#171717]" />
-              <span className="text-xs font-mono text-[#777777]">{clients.length} Total Registered</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-editorial-heading text-[#171717] tracking-tight mt-1">
-              Client Universe
-            </h1>
-            <p className="text-xs sm:text-sm text-[#555555] mt-1">
-              Command individual client workspaces, contract milestones, retainer health, and deliverable commitments.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2.5 self-start sm:self-auto">
-            <Button
-              variant="chartreuse"
-              size="sm"
-              onClick={() => setIsCreateModalOpen(true)}
-              className="gap-1.5 shadow-2xs font-semibold"
-            >
-              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Onboard Client</span>
-            </Button>
-          </div>
-        </div>
-
-        {/* Quick Insights Strip */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="p-3.5 rounded-xl border border-[#E6E4DE] bg-[#FFFFFF] shadow-2xs flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-mono text-[#777777] uppercase">Active Contracted MRR</div>
-              <div className="text-lg font-bold font-editorial-mono text-[#171717] mt-0.5">
-                {formatCurrency(totalRetainerMRR)}
-              </div>
-            </div>
-            <TrendingUp className="w-5 h-5 text-[#30A46C]" />
-          </div>
-
-          <div className="p-3.5 rounded-xl border border-[#E6E4DE] bg-[#FFFFFF] shadow-2xs flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-mono text-[#777777] uppercase">At-Risk Clients</div>
-              <div className="text-lg font-bold font-editorial-mono text-[#E5484D] mt-0.5">
-                {atRiskCount} Account{atRiskCount === 1 ? '' : 's'}
-              </div>
-            </div>
-            <ShieldAlert className="w-5 h-5 text-[#E5484D]" />
-          </div>
-
-          <div className="p-3.5 rounded-xl border border-[#E6E4DE] bg-[#FFFFFF] shadow-2xs flex items-center justify-between">
-            <div>
-              <div className="text-[10px] font-mono text-[#777777] uppercase">Average Health Score</div>
-              <div className="text-lg font-bold font-editorial-mono text-[#171717] mt-0.5">
-                {Math.round(clients.reduce((acc, c) => acc + c.health_score, 0) / (clients.length || 1))}%
-              </div>
-            </div>
-            <Users className="w-5 h-5 text-[#777777]" />
-          </div>
-        </div>
-
-        {/* Search, Filter & View Controls */}
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 p-3 bg-[#FFFFFF] rounded-xl border border-[#E6E4DE] shadow-2xs">
-          {/* Search Box */}
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[#E6E4DE] bg-[#FAFAF8] flex-1 max-w-md">
-            <Search className="w-4 h-4 text-[#777777] shrink-0" />
-            <input
-              type="text"
-              placeholder="Search clients by name, legal entity, or vertical..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full text-xs bg-transparent outline-none text-[#171717] placeholder:text-[#999999]"
-            />
-          </div>
-
-          {/* Filters and View Mode Switcher */}
-          <div className="flex items-center gap-2 flex-wrap justify-between md:justify-end">
-            {/* Status Filter */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="text-xs px-2.5 py-1.5 rounded-lg border border-[#E6E4DE] bg-[#FAFAF8] text-[#171717] outline-none"
-            >
-              <option value="all">All Statuses</option>
-              <option value="active">Active</option>
-              <option value="onboarding">Onboarding</option>
-              <option value="at_risk">At Risk</option>
-              <option value="paused">Paused</option>
-              <option value="lost">Lost</option>
-            </select>
-
-            {/* Account Owner Filter */}
-            <select
-              value={ownerFilter}
-              onChange={(e) => setOwnerFilter(e.target.value)}
-              className="text-xs px-2.5 py-1.5 rounded-lg border border-[#E6E4DE] bg-[#FAFAF8] text-[#171717] outline-none"
-            >
-              <option value="all">All Account Owners</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-
-            {/* View Mode Buttons */}
-            <div className="flex items-center p-0.5 bg-[#F2EFE9] rounded-lg border border-[#E6E4DE]">
-              <button
-                onClick={() => setViewMode('cards')}
-                className={`p-1.5 rounded-md transition-all ${
-                  viewMode === 'cards'
-                    ? 'bg-[#1C1C1A] text-[#D7FF64] shadow-2xs'
-                    : 'text-[#777777] hover:text-[#171717]'
-                }`}
-                title="Visual Cards View"
-              >
-                <LayoutGrid className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('table')}
-                className={`p-1.5 rounded-md transition-all ${
-                  viewMode === 'table'
-                    ? 'bg-[#1C1C1A] text-[#D7FF64] shadow-2xs'
-                    : 'text-[#777777] hover:text-[#171717]'
-                }`}
-                title="Compact Table View"
-              >
-                <List className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('board')}
-                className={`p-1.5 rounded-md transition-all ${
-                  viewMode === 'board'
-                    ? 'bg-[#1C1C1A] text-[#D7FF64] shadow-2xs'
-                    : 'text-[#777777] hover:text-[#171717]'
-                }`}
-                title="Lifecycle Board View"
-              >
-                <Columns className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Active View Container */}
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
         <div>
-          {filteredClients.length === 0 ? (
-            <div className="py-16 text-center bg-[#FFFFFF] rounded-xl border border-[#E6E4DE] shadow-2xs">
-              <Users className="w-8 h-8 text-[#999999] mx-auto mb-2" />
-              <h3 className="text-sm font-semibold text-[#171717]">No clients match current filters</h3>
-              <p className="text-xs text-[#777777] mt-1">Try resetting the search keyword or status filter dropdown.</p>
-            </div>
-          ) : viewMode === 'cards' ? (
-            <ClientCards
-              clients={filteredClients}
-              onOpenClosure={(c) => setClosureTargetClient(c)}
-            />
-          ) : viewMode === 'table' ? (
-            <ClientTable
-              clients={filteredClients}
-              onOpenClosure={(c) => setClosureTargetClient(c)}
-            />
-          ) : (
-            <ClientLifecycleBoard
-              clients={filteredClients}
-              onOpenClosure={(c) => setClosureTargetClient(c)}
-            />
-          )}
+          <h1 className="text-xl font-semibold text-gray-900">Clients</h1>
+          <p className="text-sm text-gray-400 mt-0.5">{clients.length} total</p>
         </div>
+        <button
+          onClick={() => setIsAddModalOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Add Client
+        </button>
       </div>
 
-      {/* Modals */}
-      <ClientFormModal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-      />
-      <ClientClosureModal
-        isOpen={Boolean(closureTargetClient)}
-        onClose={() => setClosureTargetClient(null)}
-        client={closureTargetClient}
-      />
+      {/* Search */}
+      <div className="relative mb-6">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search clients..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full max-w-sm pl-9 pr-4 py-2 text-sm bg-white border border-gray-200 rounded-lg text-gray-900 placeholder:text-gray-400 outline-none focus:border-gray-400 transition-colors"
+        />
+      </div>
+
+      {/* Client Table */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-20 text-gray-400 text-sm">
+          {search ? 'No clients match your search.' : 'No clients yet. Add your first client.'}
+        </div>
+      ) : (
+        <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Client</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide hidden md:table-cell">Contact</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide hidden lg:table-cell">Handler</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide hidden lg:table-cell">Due Date</th>
+                <th className="text-left px-5 py-3 text-xs font-medium text-gray-400 uppercase tracking-wide">Payment</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {filtered.map((client) => {
+                const payStatus = getPaymentStatus(client);
+                const cfg = statusConfig[payStatus];
+                return (
+                  <tr
+                    key={client.id}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    <td className="px-5 py-4">
+                      <Link href={`/clients/${client.id}`} className="block">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-600 shrink-0">
+                            {client.company.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{client.company}</div>
+                            <div className="text-xs text-gray-400">{client.name}</div>
+                          </div>
+                        </div>
+                      </Link>
+                    </td>
+                    <td className="px-5 py-4 hidden md:table-cell">
+                      <Link href={`/clients/${client.id}`} className="block">
+                        <div className="text-sm text-gray-600">{client.name}</div>
+                      </Link>
+                    </td>
+                    <td className="px-5 py-4 hidden lg:table-cell">
+                      <Link href={`/clients/${client.id}`} className="block">
+                        <div className="text-sm text-gray-600">{client.account_manager_name || '—'}</div>
+                      </Link>
+                    </td>
+                    <td className="px-5 py-4 hidden lg:table-cell">
+                      <Link href={`/clients/${client.id}`} className="block">
+                        <div className="text-sm text-gray-600">{formatDate(client.payment_due_date) || '—'}</div>
+                      </Link>
+                    </td>
+                    <td className="px-5 py-4">
+                      <Link href={`/clients/${client.id}`} className="block">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border ${cfg.color}`}>
+                          {cfg.label}
+                        </span>
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <ClientFormModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />
     </AppShell>
   );
 }

@@ -22,7 +22,10 @@ import {
   ProposalStatus,
   DeliverableStatus,
   TaskStatus,
-  PaymentTransaction
+  PaymentTransaction,
+  ClientPayment,
+  ClientWorkItem,
+  WorkStatus
 } from '@/lib/types';
 import {
   INITIAL_USERS,
@@ -68,6 +71,8 @@ interface AgencyStoreContextType {
   
   users: UserProfile[];
   clients: Client[];
+  clientPayments: ClientPayment[];
+  clientWorkItems: ClientWorkItem[];
   leads: Lead[];
   proposals: Proposal[];
   projects: Project[];
@@ -113,6 +118,10 @@ interface AgencyStoreContextType {
 
   addExpense: (expense: Partial<Expense>) => Expense;
   addClientInteraction: (interaction: Partial<ClientInteraction>) => void;
+  addClientPayment: (clientId: string, payment: { amount: number; payment_date: string; note?: string }) => void;
+  addClientWorkItem: (clientId: string, item: { title: string; service: string; status: WorkStatus; progress: number; notes?: string }) => ClientWorkItem;
+  updateClientWorkItem: (id: string, updates: Partial<Pick<ClientWorkItem, 'title' | 'service' | 'status' | 'progress' | 'notes'>>) => void;
+  deleteClientWorkItem: (id: string) => void;
 
   markNotificationRead: (id: string) => void;
   clearAllNotifications: () => void;
@@ -139,6 +148,8 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
   // State slices
   const [users, setUsers] = useState<UserProfile[]>(INITIAL_USERS);
   const [clients, setClients] = useState<Client[]>(INITIAL_CLIENTS);
+  const [clientPayments, setClientPayments] = useState<ClientPayment[]>([]);
+  const [clientWorkItems, setClientWorkItems] = useState<ClientWorkItem[]>([]);
   const [leads, setLeads] = useState<Lead[]>(INITIAL_LEADS);
   const [proposals, setProposals] = useState<Proposal[]>(INITIAL_PROPOSALS);
   const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
@@ -202,6 +213,8 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed.clients) setClients(parsed.clients);
+        if (parsed.clientPayments) setClientPayments(parsed.clientPayments);
+        if (parsed.clientWorkItems) setClientWorkItems(parsed.clientWorkItems);
         if (parsed.leads) setLeads(parsed.leads);
         if (parsed.proposals) setProposals(parsed.proposals);
         if (parsed.projects) setProjects(parsed.projects);
@@ -225,6 +238,8 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
     try {
       const dataToSave = {
         clients,
+        clientPayments,
+        clientWorkItems,
         leads,
         proposals,
         projects,
@@ -242,7 +257,7 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
     } catch {
       // Storage might be full or restricted
     }
-  }, [clients, leads, proposals, projects, tasks, deliverables, invoices, expenses, clientClosures, interactions, activityLogs, notifications, currentRole]);
+  }, [clients, clientPayments, clientWorkItems, leads, proposals, projects, tasks, deliverables, invoices, expenses, clientClosures, interactions, activityLogs, notifications, currentRole]);
 
   // Current active user based on simulated role and server-verified Tailscale employee
   const currentUser = useMemo(() => {
@@ -413,6 +428,11 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
       next_action_due: clientData.next_action_due,
       website: clientData.website,
       internal_notes: clientData.internal_notes,
+      email: clientData.email,
+      phone: clientData.phone,
+      agreed_amount: clientData.agreed_amount ?? clientData.project_value ?? 0,
+      payment_due_date: clientData.payment_due_date,
+      last_payment_date: clientData.last_payment_date,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -981,6 +1001,68 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
     toast.success('Interaction logged');
   };
 
+  const addClientPayment = (clientId: string, paymentData: { amount: number; payment_date: string; note?: string }) => {
+    const newPayment: ClientPayment = {
+      id: generateId('cpay'),
+      client_id: clientId,
+      amount: paymentData.amount,
+      payment_date: paymentData.payment_date,
+      note: paymentData.note,
+      created_at: new Date().toISOString(),
+    };
+
+    setClientPayments((prev) => [newPayment, ...prev]);
+
+    // Update client's total_paid, outstanding_balance, and last_payment_date
+    setClients((prev) =>
+      prev.map((c) => {
+        if (c.id !== clientId) return c;
+        const newTotalPaid = (c.total_paid || 0) + paymentData.amount;
+        const agreedAmount = c.agreed_amount ?? c.project_value ?? 0;
+        const newOutstanding = Math.max(0, agreedAmount - newTotalPaid);
+        return {
+          ...c,
+          total_paid: newTotalPaid,
+          outstanding_balance: newOutstanding,
+          last_payment_date: paymentData.payment_date,
+          updated_at: new Date().toISOString(),
+        };
+      })
+    );
+
+    toast.success(`Payment of ₹${paymentData.amount.toLocaleString()} recorded`);
+  };
+
+  const addClientWorkItem = (clientId: string, itemData: { title: string; service: string; status: WorkStatus; progress: number; notes?: string }): ClientWorkItem => {
+    const newItem: ClientWorkItem = {
+      id: generateId('work'),
+      client_id: clientId,
+      title: itemData.title,
+      service: itemData.service,
+      status: itemData.status,
+      progress: itemData.progress,
+      notes: itemData.notes,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    setClientWorkItems((prev) => [newItem, ...prev]);
+    toast.success('Work item added');
+    return newItem;
+  };
+
+  const updateClientWorkItem = (id: string, updates: Partial<Pick<ClientWorkItem, 'title' | 'service' | 'status' | 'progress' | 'notes'>>) => {
+    setClientWorkItems((prev) =>
+      prev.map((w) =>
+        w.id === id ? { ...w, ...updates, updated_at: new Date().toISOString() } : w
+      )
+    );
+  };
+
+  const deleteClientWorkItem = (id: string) => {
+    setClientWorkItems((prev) => prev.filter((w) => w.id !== id));
+    toast.success('Work item removed');
+  };
+
   const markNotificationRead = (id: string) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
@@ -1021,6 +1103,8 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
         setTimeframe,
         users,
         clients,
+        clientPayments,
+        clientWorkItems,
         leads,
         proposals,
         projects,
@@ -1055,6 +1139,10 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
         recordPayment,
         addExpense,
         addClientInteraction,
+        addClientPayment,
+        addClientWorkItem,
+        updateClientWorkItem,
+        deleteClientWorkItem,
         markNotificationRead,
         clearAllNotifications,
         resetToDefaultData,
