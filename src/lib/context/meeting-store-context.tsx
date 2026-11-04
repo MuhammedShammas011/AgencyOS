@@ -3,14 +3,16 @@
 /**
  * Meeting Store Context
  *
- * Persists all company meetings to PostgreSQL.
- * Synchronizes meeting list and participants in real time with polling.
+ * Persists all company meetings to central PostgreSQL database.
+ * Synchronizes meeting list and participants in real time with
+ * Supabase Realtime WebSocket events and fallback polling.
  */
 
 import React, {
   createContext, useContext, useState, useEffect, useCallback, ReactNode,
 } from 'react';
 import { Meeting, MeetingParticipant, MeetingStatus, ParticipantStatus } from '@/lib/types';
+import { supabase } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 
 interface MeetingStoreContextType {
@@ -69,7 +71,7 @@ export function MeetingStoreProvider({
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Hydrate from localStorage on mount
+  // Hydrate from localStorage on initial mount as instant local cache
   useEffect(() => {
     setMeetings(loadLocal());
   }, []);
@@ -102,7 +104,34 @@ export function MeetingStoreProvider({
     }
   }, []);
 
-  // ── Real-time polling synchronization (every 4s) ───────────────────────────
+  // ── Supabase Realtime Subscription ──────────────────────────────────────────
+  useEffect(() => {
+    if (!supabase || !currentEmployeeId) return;
+
+    const channel = supabase
+      .channel('meetings-realtime-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'meetings' },
+        () => {
+          refreshMeetings(currentEmployeeId, true);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'meeting_participants' },
+        () => {
+          refreshMeetings(currentEmployeeId, true);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase?.removeChannel(channel);
+    };
+  }, [currentEmployeeId, refreshMeetings]);
+
+  // ── Real-time polling synchronization (every 4s when tab is active) ─────────
   useEffect(() => {
     if (!currentEmployeeId) return;
 

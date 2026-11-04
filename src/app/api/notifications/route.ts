@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
 // ── PATCH /api/notifications ──────────────────────────────────────────────────
 // Mark a notification (or all) as read.
 export async function PATCH(request: NextRequest) {
+  await connection();
   try {
     await ensureMeetingsDatabaseTables();
 

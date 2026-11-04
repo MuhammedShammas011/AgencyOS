@@ -38,8 +38,12 @@ export function AppShell({ children }: AppShellProps) {
               <Menu className="w-5 h-5" />
             </button>
 
-            <div className="text-xs font-medium text-gray-400 truncate">
+            <div className="flex items-center gap-2 text-xs font-medium text-gray-400 truncate">
               <span className="hidden sm:inline">Agency OS · </span>Internal Portal
+              <span className="hidden xs:inline-flex items-center gap-1 text-[10px] text-green-700 bg-green-50 border border-green-200/60 px-1.5 py-0.2 rounded font-mono">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                Live Sync
+              </span>
             </div>
           </div>
 

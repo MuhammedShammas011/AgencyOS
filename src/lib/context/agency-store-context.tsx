@@ -1,6 +1,15 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  ReactNode,
+} from 'react';
 import {
   Client,
   Lead,
@@ -25,7 +34,7 @@ import {
   PaymentTransaction,
   ClientPayment,
   ClientWorkItem,
-  WorkStatus
+  WorkStatus,
 } from '@/lib/types';
 import {
   INITIAL_USERS,
@@ -43,6 +52,7 @@ import {
   INITIAL_NOTIFICATIONS,
 } from '@/lib/data/initial-data';
 import { isPastDate, generateId } from '@/lib/utils';
+import { supabase } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 
 export interface TailscaleEmployeeIdentity {
@@ -70,7 +80,7 @@ interface AgencyStoreContextType {
   isLoadingIdentity: boolean;
   timeframe: '7d' | '30d' | '90d' | 'custom';
   setTimeframe: (tf: '7d' | '30d' | '90d' | 'custom') => void;
-  
+
   users: UserProfile[];
   clients: Client[];
   clientPayments: ClientPayment[];
@@ -88,6 +98,11 @@ interface AgencyStoreContextType {
   notifications: NotificationItem[];
   unreadNotificationCount: number;
 
+  // Sync state
+  isSyncing: boolean;
+  lastSyncedAt: string | null;
+  refreshDatabase: () => Promise<void>;
+
   // Computed live metrics
   operationalSummary: OperationalSummary;
   businessPulse: BusinessPulseMetrics;
@@ -96,7 +111,7 @@ interface AgencyStoreContextType {
   addClient: (client: Partial<Client>) => Client;
   updateClient: (id: string, updates: Partial<Client>) => void;
   closeClient: (closureData: Omit<ClientClosureRecord, 'id' | 'created_at'>) => void;
-  
+
   addLead: (lead: Partial<Lead>) => Lead;
   updateLeadStage: (id: string, newStage: LeadPipelineStage, notes?: string) => void;
   convertLeadToClient: (leadId: string) => Client | null;
@@ -148,7 +163,7 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
   });
   const [isLoadingIdentity, setIsLoadingIdentity] = useState(true);
 
-  // State slices
+  // Central Database State Slices
   const [users, setUsers] = useState<UserProfile[]>(INITIAL_USERS);
   const [clients, setClients] = useState<Client[]>(INITIAL_CLIENTS);
   const [clientPayments, setClientPayments] = useState<ClientPayment[]>([]);
@@ -165,6 +180,217 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(INITIAL_ACTIVITY_LOGS);
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
 
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+
+  // Ref to prevent duplicate in-flight requests
+  const isSyncingRef = useRef(false);
+
+  // ── Central Database Fetch & Reconcile ─────────────────────────────────────
+  const fetchSyncData = useCallback(async (isSilent = false) => {
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
+    if (!isSilent) setIsSyncing(true);
+
+    try {
+      const res = await fetch('/api/sync', {
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (Array.isArray(data.users) && data.users.length > 0) setUsers(data.users);
+          if (Array.isArray(data.clients) && data.clients.length > 0) setClients(data.clients);
+          if (Array.isArray(data.clientPayments)) setClientPayments(data.clientPayments);
+          if (Array.isArray(data.clientWorkItems)) setClientWorkItems(data.clientWorkItems);
+          if (Array.isArray(data.projects)) setProjects(data.projects);
+          if (Array.isArray(data.tasks)) setTasks(data.tasks);
+          if (Array.isArray(data.deliverables)) setDeliverables(data.deliverables);
+          if (Array.isArray(data.invoices)) setInvoices(data.invoices);
+          if (Array.isArray(data.expenses)) setExpenses(data.expenses);
+          if (Array.isArray(data.leads)) setLeads(data.leads);
+          if (Array.isArray(data.proposals)) setProposals(data.proposals);
+          if (Array.isArray(data.notifications)) setNotifications(data.notifications);
+
+          setLastSyncedAt(data.synced_at || new Date().toISOString());
+
+          // Save backup snapshot to local storage for offline fallback only
+          try {
+            localStorage.setItem(
+              LOCAL_STORAGE_KEY,
+              JSON.stringify({
+                clients: data.clients,
+                clientPayments: data.clientPayments,
+                clientWorkItems: data.clientWorkItems,
+                projects: data.projects,
+                tasks: data.tasks,
+              })
+            );
+          } catch {}
+        }
+      }
+    } catch (err) {
+      if (!isSilent) {
+        console.warn('[agency-store: sync failed, using cached state]', err);
+      }
+    } finally {
+      isSyncingRef.current = false;
+      if (!isSilent) setIsSyncing(false);
+    }
+  }, []);
+
+  // 1. Initial Load: Fetch from Supabase PostgreSQL on mount
+  useEffect(() => {
+    fetchSyncData(false);
+
+    // Restore active user selection from storage
+    try {
+      const savedUser = localStorage.getItem('agency_os_active_user_id');
+      if (savedUser) setActiveUserIdState(savedUser);
+    } catch {}
+  }, [fetchSyncData]);
+
+  // 2. Re-fetch on window focus or network reconnect
+  useEffect(() => {
+    const handleOnline = () => fetchSyncData(true);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchSyncData(true);
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [fetchSyncData]);
+
+  // 3. Supabase Realtime Subscription (Multi-user live sync)
+  useEffect(() => {
+    if (!supabase) return;
+
+    const channel = supabase
+      .channel('agency-realtime-sync')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'clients' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newClient = payload.new as Client;
+            setClients((prev) => {
+              if (prev.some((c) => c.id === newClient.id)) return prev;
+              return [newClient, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = payload.new as Client;
+            setClients((prev) =>
+              prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
+            );
+          } else if (payload.eventType === 'DELETE') {
+            const oldId = (payload.old as { id?: string }).id;
+            if (oldId) {
+              setClients((prev) => prev.filter((c) => c.id !== oldId));
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'client_payments' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const payment = payload.new as ClientPayment;
+            setClientPayments((prev) => {
+              if (prev.some((p) => p.id === payment.id)) return prev;
+              return [payment, ...prev];
+            });
+            // Re-fetch sync to get updated client totals
+            fetchSyncData(true);
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'client_work_items' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const item = payload.new as ClientWorkItem;
+            setClientWorkItems((prev) => {
+              if (prev.some((w) => w.id === item.id)) return prev;
+              return [item, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const item = payload.new as ClientWorkItem;
+            setClientWorkItems((prev) =>
+              prev.map((w) => (w.id === item.id ? { ...w, ...item } : w))
+            );
+          } else if (payload.eventType === 'DELETE') {
+            const oldId = (payload.old as { id?: string }).id;
+            if (oldId) {
+              setClientWorkItems((prev) => prev.filter((w) => w.id !== oldId));
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'projects' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const proj = payload.new as Project;
+            setProjects((prev) => (prev.some((p) => p.id === proj.id) ? prev : [proj, ...prev]));
+          } else if (payload.eventType === 'UPDATE') {
+            const proj = payload.new as Project;
+            setProjects((prev) => prev.map((p) => (p.id === proj.id ? { ...p, ...proj } : p)));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const task = payload.new as Task;
+            setTasks((prev) => (prev.some((t) => t.id === task.id) ? prev : [task, ...prev]));
+          } else if (payload.eventType === 'UPDATE') {
+            const task = payload.new as Task;
+            setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...task } : t)));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'notifications' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const notif = payload.new as NotificationItem;
+            setNotifications((prev) => [notif, ...prev]);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase?.removeChannel(channel);
+    };
+  }, [fetchSyncData]);
+
+  // 4. Background Polling Fallback (every 5 seconds when tab is active)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchSyncData(true);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [fetchSyncData]);
+
   // Server-verified Tailscale Device Identity Fetch
   useEffect(() => {
     let isMounted = true;
@@ -172,13 +398,11 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
       try {
         const res = await fetch('/api/auth/tailscale-user', {
           cache: 'no-store',
-          headers: { 'Accept': 'application/json' },
+          headers: { Accept: 'application/json' },
         });
         if (res.ok) {
           const data: TailscaleEmployeeIdentity = await res.json();
-          if (isMounted) {
-            setEmployeeIdentity(data);
-          }
+          if (isMounted) setEmployeeIdentity(data);
         } else {
           if (isMounted) {
             setEmployeeIdentity({
@@ -197,9 +421,7 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
           });
         }
       } finally {
-        if (isMounted) {
-          setIsLoadingIdentity(false);
-        }
+        if (isMounted) setIsLoadingIdentity(false);
       }
     }
 
@@ -209,111 +431,42 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Restore from localStorage if available
-  useEffect(() => {
-    try {
-      const savedUser = localStorage.getItem('agency_os_active_user_id');
-      if (savedUser) {
-        setActiveUserIdState(savedUser);
-      }
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed.clients) setClients(parsed.clients);
-        if (parsed.clientPayments) setClientPayments(parsed.clientPayments);
-        if (parsed.clientWorkItems) setClientWorkItems(parsed.clientWorkItems);
-        if (parsed.leads) setLeads(parsed.leads);
-        if (parsed.proposals) setProposals(parsed.proposals);
-        if (parsed.projects) setProjects(parsed.projects);
-        if (parsed.tasks) setTasks(parsed.tasks);
-        if (parsed.deliverables) setDeliverables(parsed.deliverables);
-        if (parsed.invoices) setInvoices(parsed.invoices);
-        if (parsed.expenses) setExpenses(parsed.expenses);
-        if (parsed.clientClosures) setClientClosures(parsed.clientClosures);
-        if (parsed.interactions) setInteractions(parsed.interactions);
-        if (parsed.activityLogs) setActivityLogs(parsed.activityLogs);
-        if (parsed.notifications) setNotifications(parsed.notifications);
-        if (parsed.currentRole) setCurrentRole(parsed.currentRole);
-      }
-    } catch {
-      // Ignore parse errors and use initial data
-    }
-  }, []);
-
-  // Save to localStorage on state changes
-  useEffect(() => {
-    try {
-      const dataToSave = {
-        clients,
-        clientPayments,
-        clientWorkItems,
-        leads,
-        proposals,
-        projects,
-        tasks,
-        deliverables,
-        invoices,
-        expenses,
-        clientClosures,
-        interactions,
-        activityLogs,
-        notifications,
-        currentRole,
-      };
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(dataToSave));
-    } catch {
-      // Storage might be full or restricted
-    }
-  }, [clients, clientPayments, clientWorkItems, leads, proposals, projects, tasks, deliverables, invoices, expenses, clientClosures, interactions, activityLogs, notifications, currentRole]);
-
   const setActiveUserId = (id: string) => {
     setActiveUserIdState(id);
     try {
       localStorage.setItem('agency_os_active_user_id', id);
     } catch {}
     const found = users.find((u) => u.id === id);
-    if (found) {
-      setCurrentRole(found.role);
-    }
+    if (found) setCurrentRole(found.role);
   };
 
-  // Current active user based on selected employee and server-verified Tailscale employee
+  // Current active user
   const currentUser = useMemo(() => {
-    // If Tailscale has identified a registered employee, match their user profile
     if (employeeIdentity.identified && employeeIdentity.employeeName && employeeIdentity.employeeName !== 'Unknown Employee') {
       const foundEmployee = users.find(
         (u) => u.name.toLowerCase() === employeeIdentity.employeeName.toLowerCase()
       );
-      if (foundEmployee) {
-        return foundEmployee;
-      }
+      if (foundEmployee) return foundEmployee;
     }
 
-    // Otherwise use selected active employee
     const foundSelected = users.find((u) => u.id === activeUserId);
-    if (foundSelected) {
-      return foundSelected;
-    }
+    if (foundSelected) return foundSelected;
 
-    const fallback = users.find((u) => u.role === currentRole) || users[0];
-    return fallback;
+    return users.find((u) => u.role === currentRole) || users[0];
   }, [users, activeUserId, currentRole, employeeIdentity]);
 
-  // Dynamic Operational Summary calculation (strictly computed, never hardcoded!)
+  // Operational summary
   const operationalSummary = useMemo<OperationalSummary>(() => {
-    const proposalsAwaiting = proposals.filter((p) => p.status === 'sent' || p.status === 'negotiation' || p.status === 'viewed').length;
-    
+    const proposalsAwaiting = proposals.filter(
+      (p) => p.status === 'sent' || p.status === 'negotiation' || p.status === 'viewed'
+    ).length;
+
     const deliverablesOverdue = deliverables.filter((d) => {
       return d.status !== 'approved' && d.status !== 'cancelled' && isPastDate(d.due_date);
     }).length;
 
-    // Payments due in current 7 days or overdue
-    const today = typeof window === 'undefined' ? new Date('2026-10-15T12:00:00Z') : new Date();
-    const next7Days = new Date(today);
-    next7Days.setDate(today.getDate() + 7);
-
     const paymentsDue = invoices
-      .filter((inv) => (inv.status === 'sent' || inv.status === 'partially_paid' || inv.status === 'overdue'))
+      .filter((inv) => inv.status === 'sent' || inv.status === 'partially_paid' || inv.status === 'overdue')
       .reduce((acc, inv) => acc + inv.outstanding_amount, 0);
 
     const atRiskClients = clients.filter((c) => c.status === 'at_risk').length;
@@ -328,13 +481,12 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
     };
   }, [proposals, deliverables, invoices, clients, tasks]);
 
-  // Dynamic Business Pulse metrics
+  // Business pulse metrics
   const businessPulse = useMemo<BusinessPulseMetrics>(() => {
     const activeClientsList = clients.filter((c) => c.status === 'active' || c.status === 'onboarding');
     const activeClients = activeClientsList.length;
-    
-    // New clients this month (start date within current month)
-    const now = typeof window === 'undefined' ? new Date('2026-10-15T12:00:00Z') : new Date();
+
+    const now = new Date();
     const curYear = now.getFullYear();
     const curMonth = now.getMonth();
     const newClientsThisMonth = clients.filter((c) => {
@@ -342,29 +494,23 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
       return d.getFullYear() === curYear && d.getMonth() === curMonth;
     }).length;
 
-    // Monthly recurring revenue (sum of monthly_retainer for active clients)
     const mrr = activeClientsList.reduce((acc, c) => acc + (c.monthly_retainer || 0), 0);
-
-    // Invoiced and Cash collected from Invoices
     const invoicedRevenue = invoices.reduce((acc, inv) => acc + inv.total_amount, 0);
     const totalRevenueCollected = invoices.reduce((acc, inv) => acc + inv.amount_paid, 0);
     const outstandingReceivables = invoices.reduce((acc, inv) => acc + inv.outstanding_amount, 0);
 
-    // Expenses total
     const totalExpenses = expenses.reduce((acc, exp) => acc + exp.amount, 0);
     const estimatedOperatingProfit = totalRevenueCollected - totalExpenses;
-    const operatingProfitMargin = totalRevenueCollected > 0 
-      ? Math.round((estimatedOperatingProfit / totalRevenueCollected) * 100) 
+    const operatingProfitMargin = totalRevenueCollected > 0
+      ? Math.round((estimatedOperatingProfit / totalRevenueCollected) * 100)
       : 0;
 
-    // Proposal conversion rate (accepted / total decided proposals)
     const decidedProposals = proposals.filter((p) => p.status === 'accepted' || p.status === 'rejected');
     const acceptedProposals = proposals.filter((p) => p.status === 'accepted');
     const proposalConversionRate = decidedProposals.length > 0
       ? Math.round((acceptedProposals.length / decidedProposals.length) * 100)
-      : 75; // Baseline if no decisions yet
+      : 75;
 
-    // Client Retention Rate (Active / (Active + Lost))
     const totalLifetimeClients = clients.length + clientClosures.length;
     const lostClientsCount = clients.filter((c) => c.status === 'lost').length + clientClosures.length;
     const clientRetentionRate = totalLifetimeClients > 0
@@ -390,36 +536,19 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
     return notifications.filter((n) => !n.is_read).length;
   }, [notifications]);
 
-  // Helper to record an activity log
-  const logActivity = (
-    actionType: ActivityLog['action_type'],
-    entityType: ActivityLog['entity_type'],
-    entityId: string,
-    entityName: string,
-    description: string
-  ) => {
-    const newLog: ActivityLog = {
-      id: generateId('act'),
-      actor_name: currentUser.name,
-      actor_role: currentUser.title,
-      action_type: actionType,
-      entity_type: entityType,
-      entity_id: entityId,
-      entity_name: entityName,
-      description,
-      created_at: new Date().toISOString(),
-    };
-    setActivityLogs((prev) => [newLog, ...prev]);
-  };
+  // ── Database Operations (Async Central DB with Optimistic UI) ─────────────
 
   // CLIENT ACTIONS
   const addClient = (clientData: Partial<Client>): Client => {
+    const id = generateId('client');
+    const agreedAmount = clientData.agreed_amount ?? clientData.project_value ?? 0;
+
     const newClient: Client = {
-      id: generateId('client'),
-      name: clientData.name || 'Untitled Client',
+      id,
+      name: clientData.name || clientData.company || 'Untitled Client',
       company: clientData.company || clientData.name || 'Untitled Co',
-      industry: clientData.industry || 'Creative Agency',
-      status: clientData.status || 'onboarding',
+      industry: clientData.industry || 'General',
+      status: clientData.status || 'active',
       health_score: clientData.health_score ?? 90,
       account_manager_id: clientData.account_manager_id || currentUser.id,
       account_manager_name: clientData.account_manager_name || currentUser.name,
@@ -427,54 +556,86 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
       acquisition_source_id: clientData.acquisition_source_id || 'source_direct',
       acquisition_source_name: clientData.acquisition_source_name || 'Direct Outreach',
       referring_person: clientData.referring_person,
-      sales_owner_name: clientData.sales_owner_name || clientData.referring_person,
+      sales_owner_name: clientData.sales_owner_name,
       sales_owner_id: clientData.sales_owner_id,
       monthly_retainer: clientData.monthly_retainer || 0,
-      project_value: clientData.project_value || 0,
+      project_value: agreedAmount,
+      agreed_amount: agreedAmount,
       total_invoiced: 0,
       total_paid: 0,
-      outstanding_balance: 0,
-      lifetime_value: (clientData.monthly_retainer ? clientData.monthly_retainer * 12 : 0) + (clientData.project_value || 0),
+      outstanding_balance: agreedAmount,
+      lifetime_value: agreedAmount,
       contract_start_date: clientData.contract_start_date || new Date().toISOString().split('T')[0],
       contract_end_date: clientData.contract_end_date,
-      next_action: clientData.next_action || 'Kick-off onboarding sprint',
-      next_action_due: clientData.next_action_due,
-      website: clientData.website,
-      internal_notes: clientData.internal_notes,
-      email: clientData.email,
-      phone: clientData.phone,
-      agreed_amount: clientData.agreed_amount ?? clientData.project_value ?? 0,
       payment_due_date: clientData.payment_due_date,
       last_payment_date: clientData.last_payment_date,
+      website: clientData.website,
+      email: clientData.email,
+      phone: clientData.phone,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
+    // 1. Optimistic UI update
     setClients((prev) => [newClient, ...prev]);
-    logActivity('client_created', 'client', newClient.id, newClient.name, `Onboarded new client "${newClient.name}"`);
-    toast.success(`Client "${newClient.name}" created successfully`);
+
+    // 2. Persist to central Supabase PostgreSQL
+    fetch('/api/clients', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newClient),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to save client to database');
+        }
+        const data = await res.json();
+        if (data.client) {
+          setClients((prev) => prev.map((c) => (c.id === id ? data.client : c)));
+        }
+      })
+      .catch((err) => {
+        console.error('[addClient DB error]', err);
+        toast.error('Client saved locally; syncing to central database in background.');
+      });
+
+    toast.success(`Client "${newClient.company}" created`);
     return newClient;
   };
 
   const updateClient = (id: string, updates: Partial<Client>) => {
+    // 1. Optimistic UI update
     setClients((prev) =>
       prev.map((c) => {
         if (c.id === id) {
-          // Check if ownership changed
-          if (updates.account_manager_id && updates.account_manager_id !== c.account_manager_id) {
-            logActivity(
-              'client_owner_reassigned',
-              'client',
-              c.id,
-              c.name,
-              `Reassigned account manager to ${updates.account_manager_name || updates.account_manager_id}`
-            );
-          }
           return { ...c, ...updates, updated_at: new Date().toISOString() };
         }
         return c;
       })
     );
+
+    // 2. Persist to central Supabase PostgreSQL
+    fetch(`/api/clients/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to update client in database');
+        }
+        const data = await res.json();
+        if (data.client) {
+          setClients((prev) => prev.map((c) => (c.id === id ? data.client : c)));
+        }
+      })
+      .catch((err) => {
+        console.error('[updateClient DB error]', err);
+        toast.error('Update saved locally; syncing to database.');
+      });
+
     toast.success('Client updated');
   };
 
@@ -487,220 +648,162 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
 
     setClientClosures((prev) => [record, ...prev]);
 
-    // Mark client as lost in clients list
-    setClients((prev) =>
-      prev.map((c) => {
-        if (c.id === closureData.client_id) {
-          return {
-            ...c,
-            status: 'lost',
-            health_score: 10,
-            updated_at: new Date().toISOString(),
-          };
-        }
-        return c;
-      })
-    );
-
-    logActivity(
-      'client_closure_recorded',
-      'client',
-      closureData.client_id,
-      closureData.client_name,
-      `Recorded structured closure for "${closureData.client_name}": ${closureData.primary_loss_reason}`
-    );
-
+    // Mark client as lost in database
+    updateClient(closureData.client_id, { status: 'lost', health_score: 10 });
     toast.info(`Client closure recorded for "${closureData.client_name}"`);
   };
 
-  // LEAD ACTIONS
-  const addLead = (leadData: Partial<Lead>): Lead => {
-    const newLead: Lead = {
-      id: generateId('lead'),
-      name: leadData.name || 'New Prospect',
-      company: leadData.company || 'Unknown Co',
-      email: leadData.email || '',
-      phone: leadData.phone,
-      industry: leadData.industry,
-      acquisition_source: leadData.acquisition_source || 'Website',
-      referring_person: leadData.referring_person,
-      lead_owner_id: leadData.lead_owner_id || currentUser.id,
-      lead_owner_name: leadData.lead_owner_name || currentUser.name,
-      estimated_deal_value: leadData.estimated_deal_value || 0,
-      deal_type: leadData.deal_type || 'retainer',
-      stage: leadData.stage || 'new',
-      confidence_level: leadData.confidence_level || 'medium',
-      next_follow_up: leadData.next_follow_up,
-      notes: leadData.notes,
+  // CLIENT PAYMENTS
+  const addClientPayment = (
+    clientId: string,
+    paymentData: { amount: number; payment_date: string; note?: string }
+  ) => {
+    const tempId = generateId('cpay');
+    const newPayment: ClientPayment = {
+      id: tempId,
+      client_id: clientId,
+      amount: paymentData.amount,
+      payment_date: paymentData.payment_date,
+      note: paymentData.note,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
     };
 
-    setLeads((prev) => [newLead, ...prev]);
-    logActivity('lead_created', 'lead', newLead.id, newLead.company, `Added lead for ${newLead.company}`);
-    toast.success(`Lead for "${newLead.company}" created`);
-    return newLead;
-  };
+    // 1. Optimistic UI update
+    setClientPayments((prev) => [newPayment, ...prev]);
+    setClients((prev) =>
+      prev.map((c) => {
+        if (c.id !== clientId) return c;
+        const newTotalPaid = (c.total_paid || 0) + paymentData.amount;
+        const agreed = c.agreed_amount ?? c.project_value ?? 0;
+        const newRemaining = Math.max(0, agreed - newTotalPaid);
+        return {
+          ...c,
+          total_paid: newTotalPaid,
+          outstanding_balance: newRemaining,
+          last_payment_date: paymentData.payment_date,
+          updated_at: new Date().toISOString(),
+        };
+      })
+    );
 
-  const updateLeadStage = (id: string, newStage: LeadPipelineStage, notes?: string) => {
-    setLeads((prev) =>
-      prev.map((l) => {
-        if (l.id === id) {
-          const oldStage = l.stage;
-          logActivity(
-            'lead_stage_updated',
-            'lead',
-            l.id,
-            l.company,
-            `Moved lead "${l.company}" from ${oldStage.toUpperCase()} to ${newStage.toUpperCase()}`
+    // 2. Persist to central database
+    fetch(`/api/clients/${clientId}/payments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(paymentData),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to record payment in database');
+        }
+        const data = await res.json();
+        if (data.payment) {
+          setClientPayments((prev) =>
+            prev.map((p) => (p.id === tempId ? data.payment : p))
           );
-          return {
-            ...l,
-            stage: newStage,
-            notes: notes ? `${l.notes ? l.notes + '\n' : ''}${notes}` : l.notes,
-            updated_at: new Date().toISOString(),
-          };
         }
-        return l;
+        if (data.clientTotals) {
+          setClients((prev) =>
+            prev.map((c) =>
+              c.id === clientId
+                ? {
+                    ...c,
+                    total_paid: data.clientTotals.total_paid,
+                    outstanding_balance: data.clientTotals.outstanding_balance,
+                    last_payment_date: data.clientTotals.last_payment_date,
+                  }
+                : c
+            )
+          );
+        }
       })
-    );
-    toast.success(`Pipeline updated to ${newStage}`);
+      .catch((err) => {
+        console.error('[addClientPayment DB error]', err);
+        toast.error('Payment recorded locally; syncing to central database.');
+      });
+
+    toast.success(`Payment of ₹${paymentData.amount.toLocaleString()} recorded!`);
   };
 
-  const convertLeadToClient = (leadId: string): Client | null => {
-    const lead = leads.find((l) => l.id === leadId);
-    if (!lead) return null;
-
-    const newClient = addClient({
-      name: lead.name,
-      company: lead.company,
-      industry: lead.industry || 'Creative Agency',
-      acquisition_source_name: lead.acquisition_source,
-      referring_person: lead.referring_person,
-      monthly_retainer: lead.deal_type === 'retainer' ? lead.estimated_deal_value : 0,
-      project_value: lead.deal_type === 'project' ? lead.estimated_deal_value : 0,
-      sales_owner_id: lead.lead_owner_id,
-    });
-
-    // Mark lead as won
-    updateLeadStage(leadId, 'won', `Converted to client: ${newClient.name}`);
-    return newClient;
-  };
-
-  // PROPOSAL ACTIONS
-  const createProposal = (propData: Partial<Proposal>): Proposal => {
-    const items = propData.items || [];
-    const subtotal = items.reduce((acc, item) => acc + item.total, 0);
-    const discountRate = propData.discount_rate || 0;
-    const discountAmount = Math.round((subtotal * discountRate) / 100);
-    const taxableAmount = subtotal - discountAmount;
-    const taxRate = propData.tax_rate ?? 18;
-    const taxAmount = Math.round((taxableAmount * taxRate) / 100);
-    const totalQuotedValue = taxableAmount + taxAmount;
-
-    const newProp: Proposal = {
-      id: generateId('prop'),
-      proposal_number: `PROP-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
-      client_id: propData.client_id,
-      client_name: propData.client_name || 'Client',
-      company: propData.company || propData.client_name || 'Company',
-      lead_id: propData.lead_id,
-      sales_owner_id: propData.sales_owner_id || currentUser.id,
-      sales_owner_name: propData.sales_owner_name || currentUser.name,
-      version: 1,
-      status: propData.status || 'draft',
-      items,
-      subtotal,
-      discount_rate: discountRate,
-      discount_amount: discountAmount,
-      tax_rate: taxRate,
-      tax_amount: taxAmount,
-      total_quoted_value: totalQuotedValue,
-      currency: propData.currency || 'INR',
-      valid_until: propData.valid_until || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
-      expected_decision_date: propData.expected_decision_date,
-      versions: [
-        {
-          version: 1,
-          created_at: new Date().toISOString(),
-          created_by_name: currentUser.name,
-          quoted_value: totalQuotedValue,
-          changes_summary: 'Initial proposal draft',
-        },
-      ],
-      notes: propData.notes,
+  // CLIENT WORK ITEMS
+  const addClientWorkItem = (
+    clientId: string,
+    item: { title: string; service: string; status: WorkStatus; progress: number; notes?: string }
+  ): ClientWorkItem => {
+    const tempId = generateId('work');
+    const newWorkItem: ClientWorkItem = {
+      id: tempId,
+      client_id: clientId,
+      title: item.title,
+      service: item.service,
+      status: item.status,
+      progress: item.progress,
+      notes: item.notes,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
-    setProposals((prev) => [newProp, ...prev]);
-    logActivity('proposal_sent', 'proposal', newProp.id, newProp.proposal_number, `Created proposal ${newProp.proposal_number} for ${newProp.client_name}`);
-    toast.success(`Proposal ${newProp.proposal_number} generated`);
-    return newProp;
-  };
+    setClientWorkItems((prev) => [newWorkItem, ...prev]);
 
-  const updateProposalStatus = (id: string, status: ProposalStatus, feedback?: string) => {
-    setProposals((prev) =>
-      prev.map((p) => {
-        if (p.id === id) {
-          const action = status === 'accepted' ? 'proposal_accepted' : status === 'rejected' ? 'proposal_rejected' : 'proposal_value_changed';
-          logActivity(action, 'proposal', p.id, p.proposal_number, `Proposal ${p.proposal_number} marked as ${status.toUpperCase()}`);
-          return {
-            ...p,
-            status,
-            client_feedback: feedback || p.client_feedback,
-            accepted_date: status === 'accepted' ? new Date().toISOString().split('T')[0] : p.accepted_date,
-            updated_at: new Date().toISOString(),
-          };
+    fetch(`/api/clients/${clientId}/work-items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          if (data.workItem) {
+            setClientWorkItems((prev) =>
+              prev.map((w) => (w.id === tempId ? data.workItem : w))
+            );
+          }
         }
-        return p;
       })
-    );
-    toast.success(`Proposal marked as ${status}`);
+      .catch((err) => console.error('[addClientWorkItem error]', err));
+
+    toast.success('Work item added');
+    return newWorkItem;
   };
 
-  const convertProposalToProject = (proposalId: string): Project | null => {
-    const proposal = proposals.find((p) => p.id === proposalId);
-    if (!proposal) return null;
+  const updateClientWorkItem = (
+    id: string,
+    updates: Partial<Pick<ClientWorkItem, 'title' | 'service' | 'status' | 'progress' | 'notes'>>
+  ) => {
+    const existing = clientWorkItems.find((w) => w.id === id);
+    if (!existing) return;
 
-    // Build project from proposal
-    const newProject = addProject({
-      name: `${proposal.client_name} Execution Sprint`,
-      client_id: proposal.client_id || generateId('client'),
-      client_name: proposal.client_name,
-      proposal_id: proposal.id,
-      budget: proposal.subtotal,
-      contracted_scope: proposal.items.map((i) => `• ${i.description} (${i.service_category})`).join('\n'),
-      services: Array.from(new Set(proposal.items.map((i) => i.service_category))),
-      start_date: new Date().toISOString().split('T')[0],
-      deadline: new Date(Date.now() + 60 * 86400000).toISOString().split('T')[0],
-    });
+    setClientWorkItems((prev) =>
+      prev.map((w) => (w.id === id ? { ...w, ...updates, updated_at: new Date().toISOString() } : w))
+    );
 
-    // Automatically generate first deliverable from proposal items!
-    if (proposal.items.length > 0) {
-      addDeliverable({
-        title: proposal.items[0].description,
-        project_id: newProject.id,
-        project_name: newProject.name,
-        client_id: newProject.client_id,
-        client_name: newProject.client_name,
-        due_date: new Date(Date.now() + 21 * 86400000).toISOString().split('T')[0],
-      });
+    fetch(`/api/clients/${existing.client_id}/work-items/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    }).catch((err) => console.error('[updateClientWorkItem error]', err));
+
+    toast.success('Work item updated');
+  };
+
+  const deleteClientWorkItem = (id: string) => {
+    const existing = clientWorkItems.find((w) => w.id === id);
+    setClientWorkItems((prev) => prev.filter((w) => w.id !== id));
+
+    if (existing) {
+      fetch(`/api/clients/${existing.client_id}/work-items/${id}`, {
+        method: 'DELETE',
+      }).catch((err) => console.error('[deleteClientWorkItem error]', err));
     }
-
-    // Link proposal
-    setProposals((prev) =>
-      prev.map((p) => (p.id === proposalId ? { ...p, resulting_project_id: newProject.id, status: 'accepted' } : p))
-    );
-
-    toast.success(`Project "${newProject.name}" created from proposal!`);
-    return newProject;
+    toast.success('Work item removed');
   };
 
-  // PROJECT ACTIONS
+  // PROJECTS
   const addProject = (projData: Partial<Project>): Project => {
+    const tempId = generateId('proj');
     const newProject: Project = {
-      id: generateId('proj'),
+      id: tempId,
       name: projData.name || 'Untitled Creative Project',
       client_id: projData.client_id || '',
       client_name: projData.client_name || 'Client',
@@ -723,7 +826,23 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
     };
 
     setProjects((prev) => [newProject, ...prev]);
-    logActivity('project_created', 'project', newProject.id, newProject.name, `Created project "${newProject.name}"`);
+
+    fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newProject),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          if (data.project) {
+            setProjects((prev) => prev.map((p) => (p.id === tempId ? data.project : p)));
+          }
+        }
+      })
+      .catch((err) => console.error('[addProject error]', err));
+
+    toast.success(`Project "${newProject.name}" created`);
     return newProject;
   };
 
@@ -731,114 +850,27 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
     setProjects((prev) =>
       prev.map((p) => (p.id === id ? { ...p, ...updates, updated_at: new Date().toISOString() } : p))
     );
+
+    fetch(`/api/projects/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    }).catch((err) => console.error('[updateProject error]', err));
+
     toast.success('Project updated');
   };
 
-  // DELIVERABLE ACTIONS
-  const addDeliverable = (delivData: Partial<Deliverable>): Deliverable => {
-    const newDeliv: Deliverable = {
-      id: generateId('deliv'),
-      title: delivData.title || 'Master Creative Asset',
-      deliverable_type: delivData.deliverable_type || 'Brand Identity Book',
-      project_id: delivData.project_id || '',
-      project_name: delivData.project_name || '',
-      client_id: delivData.client_id || '',
-      client_name: delivData.client_name || '',
-      assigned_owner_id: delivData.assigned_owner_id || currentUser.id,
-      assigned_owner_name: delivData.assigned_owner_name || currentUser.name,
-      due_date: delivData.due_date || new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
-      status: delivData.status || 'not_started',
-      current_version: 1,
-      file_or_preview_url: delivData.file_or_preview_url,
-      internal_review_status: 'pending',
-      client_approval_status: 'pending',
-      revision_count: 0,
-      versions: [],
-      notes: delivData.notes,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    setDeliverables((prev) => [newDeliv, ...prev]);
-    toast.success(`Deliverable "${newDeliv.title}" added`);
-    return newDeliv;
-  };
-
-  const updateDeliverableStatus = (id: string, status: DeliverableStatus, notes?: string) => {
-    setDeliverables((prev) =>
-      prev.map((d) => {
-        if (d.id === id) {
-          const isApproved = status === 'approved';
-          const isRevision = status === 'revision_requested';
-          const newRevisionCount = isRevision ? d.revision_count + 1 : d.revision_count;
-
-          const action = isApproved ? 'deliverable_approved' : isRevision ? 'deliverable_revision_requested' : 'deliverable_submitted';
-          logActivity(action, 'deliverable', d.id, d.title, `Deliverable "${d.title}" status changed to ${status}`);
-
-          return {
-            ...d,
-            status,
-            revision_count: newRevisionCount,
-            approved_at: isApproved ? new Date().toISOString() : d.approved_at,
-            client_approval_status: isApproved ? 'approved' : isRevision ? 'revision_requested' : d.client_approval_status,
-            notes: notes ? `${d.notes ? d.notes + '\n' : ''}${notes}` : d.notes,
-            updated_at: new Date().toISOString(),
-          };
-        }
-        return d;
-      })
-    );
-    toast.success(`Deliverable status updated to ${status}`);
-  };
-
-  const submitDeliverableVersion = (id: string, fileUrl: string, reviewNotes?: string) => {
-    setDeliverables((prev) =>
-      prev.map((d) => {
-        if (d.id === id) {
-          const nextVersion = d.current_version + 1;
-          const newVersionRecord = {
-            version: nextVersion,
-            file_url: fileUrl,
-            submitted_at: new Date().toISOString(),
-            submitted_by_name: currentUser.name,
-            review_notes: reviewNotes,
-          };
-
-          logActivity(
-            'deliverable_submitted',
-            'deliverable',
-            d.id,
-            d.title,
-            `Uploaded version ${nextVersion} preview for "${d.title}"`
-          );
-
-          return {
-            ...d,
-            current_version: nextVersion,
-            file_or_preview_url: fileUrl,
-            status: 'internal_review',
-            internal_review_status: 'pending',
-            latest_submission_date: new Date().toISOString(),
-            versions: [newVersionRecord, ...d.versions],
-            updated_at: new Date().toISOString(),
-          };
-        }
-        return d;
-      })
-    );
-    toast.success('New deliverable version uploaded for review');
-  };
-
-  // TASK ACTIONS
+  // TASKS
   const addTask = (taskData: Partial<Task>): Task => {
+    const tempId = generateId('task');
     const newTask: Task = {
-      id: generateId('task'),
+      id: tempId,
       project_id: taskData.project_id || '',
       project_name: taskData.project_name,
       client_id: taskData.client_id,
       client_name: taskData.client_name,
       deliverable_id: taskData.deliverable_id,
-      title: taskData.title || 'Untitled Task',
+      title: taskData.title || 'Untitled Action Item',
       description: taskData.description,
       assigned_to_id: taskData.assigned_to_id || currentUser.id,
       assigned_to_name: taskData.assigned_to_name || currentUser.name,
@@ -846,74 +878,237 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
       status: taskData.status || 'todo',
       estimated_hours: taskData.estimated_hours || 4,
       actual_hours: taskData.actual_hours || 0,
-      due_date: taskData.due_date || new Date().toISOString().split('T')[0],
+      start_date: taskData.start_date,
+      due_date: taskData.due_date || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 
     setTasks((prev) => [newTask, ...prev]);
+
+    fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newTask),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          if (data.task) {
+            setTasks((prev) => prev.map((t) => (t.id === tempId ? data.task : t)));
+          }
+        }
+      })
+      .catch((err) => console.error('[addTask error]', err));
+
     toast.success('Task created');
     return newTask;
   };
 
   const updateTaskStatus = (id: string, status: TaskStatus) => {
     setTasks((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, status, completed_at: status === 'done' ? new Date().toISOString() : undefined, updated_at: new Date().toISOString() } : t))
+      prev.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              status,
+              completed_at: status === 'done' ? new Date().toISOString() : undefined,
+              updated_at: new Date().toISOString(),
+            }
+          : t
+      )
     );
+
+    fetch(`/api/tasks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status,
+        completed_at: status === 'done' ? new Date().toISOString() : null,
+      }),
+    }).catch((err) => console.error('[updateTaskStatus error]', err));
+
     toast.success(`Task moved to ${status}`);
   };
 
-  // FINANCIAL ACTIONS
-  const createInvoice = (invData: Partial<Invoice>): Invoice => {
-    const items = invData.items || [];
-    const subtotal = items.reduce((acc, item) => acc + item.amount, 0);
-    const taxRate = invData.tax_rate ?? 18;
-    const taxAmount = Math.round((subtotal * taxRate) / 100);
-    const totalAmount = subtotal + taxAmount;
+  // LEADS & PROPOSALS & DELIVERABLES & FINANCIALS (Backwards-compatible)
+  const addLead = (leadData: Partial<Lead>): Lead => {
+    const newLead: Lead = {
+      id: generateId('lead'),
+      name: leadData.name || 'New Prospect',
+      company: leadData.company || 'Unknown Co',
+      email: leadData.email || '',
+      phone: leadData.phone,
+      industry: leadData.industry,
+      acquisition_source: leadData.acquisition_source || 'Website',
+      referring_person: leadData.referring_person,
+      lead_owner_id: leadData.lead_owner_id || currentUser.id,
+      lead_owner_name: leadData.lead_owner_name || currentUser.name,
+      estimated_deal_value: leadData.estimated_deal_value || 0,
+      deal_type: leadData.deal_type || 'retainer',
+      stage: leadData.stage || 'new',
+      confidence_level: leadData.confidence_level || 'medium',
+      next_follow_up: leadData.next_follow_up,
+      notes: leadData.notes,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    setLeads((prev) => [newLead, ...prev]);
+    toast.success(`Lead for "${newLead.company}" created`);
+    return newLead;
+  };
 
+  const updateLeadStage = (id: string, newStage: LeadPipelineStage) => {
+    setLeads((prev) =>
+      prev.map((l) => (l.id === id ? { ...l, stage: newStage, updated_at: new Date().toISOString() } : l))
+    );
+    toast.success(`Lead moved to ${newStage}`);
+  };
+
+  const convertLeadToClient = (leadId: string): Client | null => {
+    const lead = leads.find((l) => l.id === leadId);
+    if (!lead) return null;
+    const client = addClient({
+      name: lead.name,
+      company: lead.company,
+      email: lead.email,
+      phone: lead.phone,
+      industry: lead.industry,
+      agreed_amount: lead.estimated_deal_value,
+      project_value: lead.estimated_deal_value,
+    });
+    updateLeadStage(leadId, 'won');
+    return client;
+  };
+
+  const createProposal = (propData: Partial<Proposal>): Proposal => {
+    const items = propData.items || [];
+    const subtotal = items.reduce((acc, item) => acc + item.total, 0);
+    const taxRate = propData.tax_rate ?? 18;
+    const taxAmount = Math.round((subtotal * taxRate) / 100);
+    const totalQuotedValue = subtotal + taxAmount;
+
+    const newProp: Proposal = {
+      id: generateId('prop'),
+      proposal_number: `PROP-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+      client_id: propData.client_id,
+      client_name: propData.client_name || 'Client',
+      company: propData.company || 'Company',
+      sales_owner_id: currentUser.id,
+      sales_owner_name: currentUser.name,
+      version: 1,
+      status: 'draft',
+      items,
+      subtotal,
+      discount_rate: 0,
+      discount_amount: 0,
+      tax_rate: taxRate,
+      tax_amount: taxAmount,
+      total_quoted_value: totalQuotedValue,
+      currency: 'INR',
+      valid_until: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+      versions: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    setProposals((prev) => [newProp, ...prev]);
+    toast.success(`Proposal ${newProp.proposal_number} drafted`);
+    return newProp;
+  };
+
+  const updateProposalStatus = (id: string, status: ProposalStatus) => {
+    setProposals((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, status, updated_at: new Date().toISOString() } : p))
+    );
+    toast.success(`Proposal status updated to ${status}`);
+  };
+
+  const convertProposalToProject = (proposalId: string): Project | null => {
+    const proposal = proposals.find((p) => p.id === proposalId);
+    if (!proposal) return null;
+    const project = addProject({
+      name: `${proposal.client_name} Sprint`,
+      client_id: proposal.client_id || '',
+      client_name: proposal.client_name,
+      budget: proposal.subtotal,
+    });
+    updateProposalStatus(proposalId, 'accepted');
+    return project;
+  };
+
+  const addDeliverable = (deliv: Partial<Deliverable>): Deliverable => {
+    const newDeliv: Deliverable = {
+      id: generateId('deliv'),
+      title: deliv.title || 'Deliverable',
+      deliverable_type: deliv.deliverable_type || 'Brand Identity Book',
+      project_id: deliv.project_id || '',
+      project_name: deliv.project_name || '',
+      client_id: deliv.client_id || '',
+      client_name: deliv.client_name || '',
+      assigned_owner_id: currentUser.id,
+      assigned_owner_name: currentUser.name,
+      due_date: deliv.due_date || new Date().toISOString().split('T')[0],
+      status: 'not_started',
+      current_version: 1,
+      internal_review_status: 'pending',
+      client_approval_status: 'pending',
+      revision_count: 0,
+      versions: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    setDeliverables((prev) => [newDeliv, ...prev]);
+    toast.success('Deliverable created');
+    return newDeliv;
+  };
+
+  const updateDeliverableStatus = (id: string, status: DeliverableStatus) => {
+    setDeliverables((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, status, updated_at: new Date().toISOString() } : d))
+    );
+    toast.success(`Deliverable status: ${status}`);
+  };
+
+  const submitDeliverableVersion = (id: string, fileUrl: string) => {
+    setDeliverables((prev) =>
+      prev.map((d) =>
+        d.id === id
+          ? {
+              ...d,
+              current_version: d.current_version + 1,
+              file_or_preview_url: fileUrl,
+              internal_review_status: 'passed',
+              status: 'submitted_to_client',
+              updated_at: new Date().toISOString(),
+            }
+          : d
+      )
+    );
+    toast.success('Version submitted');
+  };
+
+  const createInvoice = (invData: Partial<Invoice>): Invoice => {
     const newInv: Invoice = {
       id: generateId('inv'),
       invoice_number: `INV-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
       client_id: invData.client_id || '',
       client_name: invData.client_name || 'Client',
-      project_id: invData.project_id,
-      project_name: invData.project_name,
-      issue_date: invData.issue_date || new Date().toISOString().split('T')[0],
-      due_date: invData.due_date || new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0],
-      items,
-      subtotal,
-      tax_rate: taxRate,
-      tax_amount: taxAmount,
-      total_amount: totalAmount,
+      issue_date: new Date().toISOString().split('T')[0],
+      due_date: new Date(Date.now() + 15 * 86400000).toISOString().split('T')[0],
+      items: invData.items || [],
+      subtotal: invData.subtotal || 0,
+      tax_rate: 18,
+      tax_amount: 0,
+      total_amount: invData.total_amount || 0,
       amount_paid: 0,
-      outstanding_amount: totalAmount,
-      status: invData.status || 'sent',
-      payment_terms: invData.payment_terms || 'Net 15',
+      outstanding_amount: invData.total_amount || 0,
+      status: 'sent',
+      payment_terms: 'Net 15',
       payments: [],
-      notes: invData.notes,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-
     setInvoices((prev) => [newInv, ...prev]);
-    
-    // Update client total_invoiced and outstanding_balance
-    if (newInv.client_id) {
-      setClients((prev) =>
-        prev.map((c) =>
-          c.id === newInv.client_id
-            ? {
-                ...c,
-                total_invoiced: c.total_invoiced + newInv.total_amount,
-                outstanding_balance: c.outstanding_balance + newInv.total_amount,
-                updated_at: new Date().toISOString(),
-              }
-            : c
-        )
-      );
-    }
-
-    logActivity('invoice_created', 'invoice', newInv.id, newInv.invoice_number, `Generated invoice ${newInv.invoice_number} for ${newInv.client_name}`);
     toast.success(`Invoice ${newInv.invoice_number} created`);
     return newInv;
   };
@@ -925,73 +1120,35 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
       invoice_id: invoiceId,
       created_at: new Date().toISOString(),
     };
-
     setInvoices((prev) =>
-      prev.map((inv) => {
-        if (inv.id === invoiceId) {
-          const newAmountPaid = inv.amount_paid + paymentData.amount;
-          const newOutstanding = Math.max(0, inv.total_amount - newAmountPaid);
-          const newStatus = newOutstanding === 0 ? 'paid' : 'partially_paid';
-
-          // Update client balances
-          if (inv.client_id) {
-            setClients((clientPrev) =>
-              clientPrev.map((c) =>
-                c.id === inv.client_id
-                  ? {
-                      ...c,
-                      total_paid: c.total_paid + paymentData.amount,
-                      outstanding_balance: Math.max(0, c.outstanding_balance - paymentData.amount),
-                      updated_at: new Date().toISOString(),
-                    }
-                  : c
-              )
-            );
-          }
-
-          logActivity(
-            'payment_received',
-            'invoice',
-            inv.id,
-            inv.invoice_number,
-            `Recorded payment of ₹${paymentData.amount.toLocaleString()} on ${inv.invoice_number} via ${paymentData.payment_method}`
-          );
-
-          return {
-            ...inv,
-            amount_paid: newAmountPaid,
-            outstanding_amount: newOutstanding,
-            status: newStatus,
-            payments: [paymentRecord, ...inv.payments],
-            updated_at: new Date().toISOString(),
-          };
-        }
-        return inv;
-      })
+      prev.map((inv) =>
+        inv.id === invoiceId
+          ? {
+              ...inv,
+              amount_paid: inv.amount_paid + paymentData.amount,
+              outstanding_amount: Math.max(0, inv.outstanding_amount - paymentData.amount),
+              payments: [paymentRecord, ...inv.payments],
+              updated_at: new Date().toISOString(),
+            }
+          : inv
+      )
     );
-
-    toast.success(`Payment of ₹${paymentData.amount.toLocaleString()} recorded successfully!`);
+    toast.success('Payment recorded');
   };
 
   const addExpense = (expData: Partial<Expense>): Expense => {
     const newExp: Expense = {
       id: generateId('exp'),
-      title: expData.title || 'Agency Operational Expense',
+      title: expData.title || 'Operational Expense',
       category: expData.category || 'Software & AI Tools',
       vendor: expData.vendor || 'Vendor',
       amount: expData.amount || 0,
-      tax_amount: expData.tax_amount || 0,
-      expense_date: expData.expense_date || new Date().toISOString().split('T')[0],
-      payment_status: expData.payment_status || 'paid',
-      client_id: expData.client_id,
-      client_name: expData.client_name,
-      project_id: expData.project_id,
-      notes: expData.notes,
+      tax_amount: 0,
+      expense_date: new Date().toISOString().split('T')[0],
+      payment_status: 'paid',
       created_at: new Date().toISOString(),
     };
-
     setExpenses((prev) => [newExp, ...prev]);
-    logActivity('expense_logged', 'expense', newExp.id, newExp.title, `Logged expense ₹${newExp.amount.toLocaleString()} for ${newExp.vendor}`);
     toast.success('Expense recorded');
     return newExp;
   };
@@ -1005,145 +1162,24 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
       summary: interData.summary || '',
       sentiment: interData.sentiment || 'neutral',
       recorded_by_name: currentUser.name,
-      action_items: interData.action_items || [],
-      follow_up_date: interData.follow_up_date,
       created_at: new Date().toISOString(),
     };
-
     setInteractions((prev) => [newInteraction, ...prev]);
     toast.success('Interaction logged');
   };
-
-  const addClientPayment = (clientId: string, paymentData: { amount: number; payment_date: string; note?: string }) => {
-    const newPayment: ClientPayment = {
-      id: generateId('cpay'),
-      client_id: clientId,
-      amount: paymentData.amount,
-      payment_date: paymentData.payment_date,
-      note: paymentData.note,
-      created_at: new Date().toISOString(),
-    };
-
-    setClientPayments((prev) => [newPayment, ...prev]);
-
-    // Update client's total_paid, outstanding_balance, and last_payment_date
-    setClients((prev) =>
-      prev.map((c) => {
-        if (c.id !== clientId) return c;
-        const newTotalPaid = (c.total_paid || 0) + paymentData.amount;
-        const agreedAmount = c.agreed_amount ?? c.project_value ?? 0;
-        const newOutstanding = Math.max(0, agreedAmount - newTotalPaid);
-        return {
-          ...c,
-          total_paid: newTotalPaid,
-          outstanding_balance: newOutstanding,
-          last_payment_date: paymentData.payment_date,
-          updated_at: new Date().toISOString(),
-        };
-      })
-    );
-
-    toast.success(`Payment of ₹${paymentData.amount.toLocaleString()} recorded`);
-  };
-
-  const addClientWorkItem = (clientId: string, itemData: { title: string; service: string; status: WorkStatus; progress: number; notes?: string }): ClientWorkItem => {
-    const newItem: ClientWorkItem = {
-      id: generateId('work'),
-      client_id: clientId,
-      title: itemData.title,
-      service: itemData.service,
-      status: itemData.status,
-      progress: itemData.progress,
-      notes: itemData.notes,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    setClientWorkItems((prev) => [newItem, ...prev]);
-    toast.success('Work item added');
-    return newItem;
-  };
-
-  const updateClientWorkItem = (id: string, updates: Partial<Pick<ClientWorkItem, 'title' | 'service' | 'status' | 'progress' | 'notes'>>) => {
-    setClientWorkItems((prev) =>
-      prev.map((w) =>
-        w.id === id ? { ...w, ...updates, updated_at: new Date().toISOString() } : w
-      )
-    );
-  };
-
-  const deleteClientWorkItem = (id: string) => {
-    setClientWorkItems((prev) => prev.filter((w) => w.id !== id));
-    toast.success('Work item removed');
-  };
-
-  // Poll notifications from PostgreSQL for the active employee
-  useEffect(() => {
-    if (!currentUser?.id) return;
-    let isMounted = true;
-
-    const fetchNotifications = async () => {
-      try {
-        const res = await fetch(`/api/notifications?employee_id=${encodeURIComponent(currentUser.id)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted && Array.isArray(data.notifications)) {
-            setNotifications(data.notifications);
-          }
-        }
-      } catch {}
-    };
-
-    fetchNotifications();
-    const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        fetchNotifications();
-      }
-    }, 4000);
-
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, [currentUser?.id]);
 
   const markNotificationRead = (id: string) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
     );
-    fetch('/api/notifications', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id }),
-    }).catch(() => {});
   };
 
   const clearAllNotifications = () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-    if (currentUser?.id) {
-      fetch('/api/notifications', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ all: true, employee_id: currentUser.id }),
-      }).catch(() => {});
-    }
-    toast.info('All notifications marked as read');
   };
 
   const resetToDefaultData = () => {
-    localStorage.removeItem(LOCAL_STORAGE_KEY);
-    setClients(INITIAL_CLIENTS);
-    setLeads(INITIAL_LEADS);
-    setProposals(INITIAL_PROPOSALS);
-    setProjects(INITIAL_PROJECTS);
-    setTasks(INITIAL_TASKS);
-    setDeliverables(INITIAL_DELIVERABLES);
-    setInvoices(INITIAL_INVOICES);
-    setExpenses(INITIAL_EXPENSES);
-    setClientClosures(INITIAL_CLIENT_CLOSURES);
-    setInteractions(INITIAL_INTERACTIONS);
-    setActivityLogs(INITIAL_ACTIVITY_LOGS);
-    setNotifications(INITIAL_NOTIFICATIONS);
-    toast.success('Agency OS reset to curated baseline dataset');
+    fetchSyncData(false);
   };
 
   return (
@@ -1174,6 +1210,9 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
         activityLogs,
         notifications,
         unreadNotificationCount,
+        isSyncing,
+        lastSyncedAt,
+        refreshDatabase: () => fetchSyncData(false),
         operationalSummary,
         businessPulse,
         addClient,
@@ -1210,7 +1249,7 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useAgencyStore() {
+export function useAgencyStore(): AgencyStoreContextType {
   const context = useContext(AgencyStoreContext);
   if (!context) {
     throw new Error('useAgencyStore must be used within an AgencyStoreProvider');
