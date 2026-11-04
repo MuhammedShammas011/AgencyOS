@@ -64,6 +64,8 @@ interface AgencyStoreContextType {
   currentUser: UserProfile;
   currentRole: UserRole;
   setCurrentRole: (role: UserRole) => void;
+  activeUserId: string;
+  setActiveUserId: (id: string) => void;
   employeeIdentity: TailscaleEmployeeIdentity;
   isLoadingIdentity: boolean;
   timeframe: '7d' | '30d' | '90d' | 'custom';
@@ -135,6 +137,7 @@ const LOCAL_STORAGE_KEY = 'agency_os_store_v3';
 export function AgencyStoreProvider({ children }: { children: ReactNode }) {
   // Current user role simulator
   const [currentRole, setCurrentRole] = useState<UserRole>('admin');
+  const [activeUserId, setActiveUserIdState] = useState<string>('user_admin');
   const [timeframe, setTimeframe] = useState<'7d' | '30d' | '90d' | 'custom'>('30d');
 
   // Tailscale Verified Employee Identity
@@ -209,6 +212,10 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
   // Restore from localStorage if available
   useEffect(() => {
     try {
+      const savedUser = localStorage.getItem('agency_os_active_user_id');
+      if (savedUser) {
+        setActiveUserIdState(savedUser);
+      }
       const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
@@ -259,32 +266,38 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
     }
   }, [clients, clientPayments, clientWorkItems, leads, proposals, projects, tasks, deliverables, invoices, expenses, clientClosures, interactions, activityLogs, notifications, currentRole]);
 
-  // Current active user based on simulated role and server-verified Tailscale employee
+  const setActiveUserId = (id: string) => {
+    setActiveUserIdState(id);
+    try {
+      localStorage.setItem('agency_os_active_user_id', id);
+    } catch {}
+    const found = users.find((u) => u.id === id);
+    if (found) {
+      setCurrentRole(found.role);
+    }
+  };
+
+  // Current active user based on selected employee and server-verified Tailscale employee
   const currentUser = useMemo(() => {
     // If Tailscale has identified a registered employee, match their user profile
-    if (employeeIdentity.identified && employeeIdentity.employeeName) {
+    if (employeeIdentity.identified && employeeIdentity.employeeName && employeeIdentity.employeeName !== 'Unknown Employee') {
       const foundEmployee = users.find(
         (u) => u.name.toLowerCase() === employeeIdentity.employeeName.toLowerCase()
       );
       if (foundEmployee) {
         return foundEmployee;
       }
-      const fallback = users.find((u) => u.role === currentRole) || users[0];
-      return {
-        ...fallback,
-        name: employeeIdentity.employeeName,
-        title: employeeIdentity.roleTitle || fallback.title,
-      };
     }
 
-    // If unverified, unregistered, or unknown device, display "Unknown Employee"
+    // Otherwise use selected active employee
+    const foundSelected = users.find((u) => u.id === activeUserId);
+    if (foundSelected) {
+      return foundSelected;
+    }
+
     const fallback = users.find((u) => u.role === currentRole) || users[0];
-    return {
-      ...fallback,
-      name: 'Unknown Employee',
-      title: 'Unregistered Tailscale Device',
-    };
-  }, [users, currentRole, employeeIdentity]);
+    return fallback;
+  }, [users, activeUserId, currentRole, employeeIdentity]);
 
   // Dynamic Operational Summary calculation (strictly computed, never hardcoded!)
   const operationalSummary = useMemo<OperationalSummary>(() => {
@@ -1063,14 +1076,56 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
     toast.success('Work item removed');
   };
 
+  // Poll notifications from PostgreSQL for the active employee
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let isMounted = true;
+
+    const fetchNotifications = async () => {
+      try {
+        const res = await fetch(`/api/notifications?employee_id=${encodeURIComponent(currentUser.id)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && Array.isArray(data.notifications)) {
+            setNotifications(data.notifications);
+          }
+        }
+      } catch {}
+    };
+
+    fetchNotifications();
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchNotifications();
+      }
+    }, 4000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [currentUser?.id]);
+
   const markNotificationRead = (id: string) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
     );
+    fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    }).catch(() => {});
   };
 
   const clearAllNotifications = () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    if (currentUser?.id) {
+      fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true, employee_id: currentUser.id }),
+      }).catch(() => {});
+    }
     toast.info('All notifications marked as read');
   };
 
@@ -1097,6 +1152,8 @@ export function AgencyStoreProvider({ children }: { children: ReactNode }) {
         currentUser,
         currentRole,
         setCurrentRole,
+        activeUserId,
+        setActiveUserId,
         employeeIdentity,
         isLoadingIdentity,
         timeframe,

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse, connection } from 'next/server';
 import { query } from '@/lib/db';
+import { ensureMeetingsDatabaseTables } from '@/lib/db/init';
 
 // ── GET /api/meetings/[id] ────────────────────────────────────────────────────
-// Fetch a single meeting with participants. Used by the room page.
+// Fetch a single meeting with participants.
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -10,6 +11,8 @@ export async function GET(
   await connection();
   const { id } = await params;
   try {
+    await ensureMeetingsDatabaseTables();
+
     const mtgResult = await query(`SELECT * FROM meetings WHERE id = $1`, [id]);
     if (mtgResult.rows.length === 0) {
       return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
@@ -18,7 +21,11 @@ export async function GET(
       `SELECT * FROM meeting_participants WHERE meeting_id = $1 ORDER BY created_at`,
       [id]
     );
-    return NextResponse.json({ meeting: { ...mtgResult.rows[0], participants: pResult.rows } });
+    return NextResponse.json({
+      meeting: { ...mtgResult.rows[0], participants: pResult.rows }
+    }, {
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
+    });
   } catch (err) {
     console.error('[meetings/[id]:GET]', err);
     return NextResponse.json({ error: 'Database error' }, { status: 500 });
@@ -33,6 +40,8 @@ export async function PATCH(
 ) {
   const { id } = await params;
   try {
+    await ensureMeetingsDatabaseTables();
+
     const body = await request.json();
     const { status, ended_at } = body;
 
@@ -42,12 +51,19 @@ export async function PATCH(
     }
 
     await query(
-      `UPDATE meetings SET status = COALESCE($1, status), ended_at = COALESCE($2, ended_at), updated_at = now() WHERE id = $3`,
+      `UPDATE meetings
+       SET status = COALESCE($1, status),
+           ended_at = COALESCE($2, ended_at),
+           updated_at = now()
+       WHERE id = $3`,
       [status || null, ended_at || null, id]
     );
 
     const result = await query(`SELECT * FROM meetings WHERE id = $1`, [id]);
-    const pResult = await query(`SELECT * FROM meeting_participants WHERE meeting_id = $1`, [id]);
+    const pResult = await query(
+      `SELECT * FROM meeting_participants WHERE meeting_id = $1 ORDER BY created_at`,
+      [id]
+    );
     return NextResponse.json({ meeting: { ...result.rows[0], participants: pResult.rows } });
   } catch (err) {
     console.error('[meetings/[id]:PATCH]', err);
@@ -63,6 +79,7 @@ export async function DELETE(
 ) {
   const { id } = await params;
   try {
+    await ensureMeetingsDatabaseTables();
     await query(`UPDATE meetings SET status = 'cancelled', updated_at = now() WHERE id = $1`, [id]);
     return NextResponse.json({ success: true });
   } catch (err) {

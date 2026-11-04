@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
+import { ensureMeetingsDatabaseTables } from '@/lib/db/init';
 
 /**
  * POST /api/meetings/[id]/join
  *
- * Server-side access control gate before an employee enters the Jitsi room.
- * Returns the room_id ONLY if the requesting employee is a valid participant.
- *
- * Security note: This does not make the public meet.jit.si room truly private
- * (anyone with the room_id can still join via the public service). When you
- * migrate to a self-hosted Jitsi with JWT, replace this with JWT token
- * generation instead of returning the raw room_id.
+ * Server-side authorization gate before entering Jitsi room.
+ * Ensures only authorized employees or administrators can join.
+ * Automatically marks participant status as 'joined' and meeting as 'live'.
  */
 export async function POST(
   request: NextRequest,
@@ -18,6 +15,8 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
+    await ensureMeetingsDatabaseTables();
+
     const body = await request.json();
     const { employee_id, employee_name } = body;
 
@@ -25,10 +24,10 @@ export async function POST(
       return NextResponse.json({ error: 'employee_id required' }, { status: 400 });
     }
 
-    // 1. Fetch the meeting
+    // 1. Fetch meeting
     const mtgResult = await query<{
-      id: string; room_id: string; status: string; organizer_id: string;
-    }>(`SELECT id, room_id, status, organizer_id FROM meetings WHERE id = $1`, [id]);
+      id: string; room_id: string; status: string; organizer_id: string; organizer_name: string;
+    }>(`SELECT id, room_id, status, organizer_id, organizer_name FROM meetings WHERE id = $1`, [id]);
 
     if (mtgResult.rows.length === 0) {
       return NextResponse.json({ error: 'Meeting not found' }, { status: 404 });
@@ -40,45 +39,68 @@ export async function POST(
       return NextResponse.json({ error: 'Meeting has been cancelled' }, { status: 403 });
     }
     if (meeting.status === 'ended') {
-      return NextResponse.json({ error: 'Meeting has ended' }, { status: 403 });
+      return NextResponse.json({ error: 'Meeting has already ended' }, { status: 403 });
     }
 
-    // 2. Check participant membership
+    // 2. Check authorization
     const isOrganizer = meeting.organizer_id === employee_id;
+
     const pResult = await query<{ id: string; invitation_status: string }>(
-      `SELECT id, invitation_status FROM meeting_participants WHERE meeting_id = $1 AND employee_id = $2`,
-      [id, employee_id]
+      `SELECT id, invitation_status FROM meeting_participants
+       WHERE meeting_id = $1 AND (employee_id = $2 OR employee_name = $3)`,
+      [id, employee_id, employee_name || employee_id]
     );
     const isParticipant = pResult.rows.length > 0;
 
-    if (!isOrganizer && !isParticipant) {
-      return NextResponse.json({ error: 'Access denied: not a meeting participant' }, { status: 403 });
-    }
+    // Check if employee is an admin
+    const profileRes = await query<{ role: string }>(
+      `SELECT role FROM profiles WHERE id = $1`,
+      [employee_id]
+    );
+    const isAdmin = profileRes.rows[0]?.role === 'admin' || employee_id === 'user_admin';
 
-    // 3. Record join event
-    if (isParticipant) {
-      await query(
-        `UPDATE meeting_participants
-         SET invitation_status = 'joined', joined_at = now()
-         WHERE meeting_id = $1 AND employee_id = $2`,
-        [id, employee_id]
+    if (!isOrganizer && !isParticipant && !isAdmin) {
+      return NextResponse.json(
+        { error: 'Access denied: You are not invited to this company meeting.' },
+        { status: 403 }
       );
     }
 
-    // 4. Mark meeting as live if it isn't already
-    if (meeting.status === 'scheduled') {
-      await query(`UPDATE meetings SET status = 'live', updated_at = now() WHERE id = $1`, [id]);
+    // 3. If Admin was not originally in participants, add them as accepted
+    if (isAdmin && !isParticipant && !isOrganizer) {
+      await query(
+        `INSERT INTO meeting_participants (meeting_id, employee_id, employee_name, invitation_status, joined_at)
+         VALUES ($1, $2, $3, 'joined', now())
+         ON CONFLICT (meeting_id, employee_id) DO UPDATE SET invitation_status = 'joined', joined_at = now()`,
+        [id, employee_id, employee_name || 'Admin']
+      );
+    } else {
+      // Record join event for participant
+      await query(
+        `UPDATE meeting_participants
+         SET invitation_status = 'joined', joined_at = now()
+         WHERE meeting_id = $1 AND (employee_id = $2 OR employee_name = $3)`,
+        [id, employee_id, employee_name || employee_id]
+      );
     }
 
-    // 5. Return the room_id so the frontend can open Jitsi.
-    //    TODO: when migrating to self-hosted Jitsi with JWT, generate a signed
-    //    token here instead of returning the raw room_id.
+    // 4. Mark meeting status as 'live' if it was scheduled
+    if (meeting.status === 'scheduled') {
+      await query(
+        `UPDATE meetings SET status = 'live', updated_at = now() WHERE id = $1`,
+        [id]
+      );
+    }
+
     return NextResponse.json({
       room_id: meeting.room_id,
-      jitsi_domain: process.env.JITSI_DOMAIN || 'meet.jit.si',
+      jitsi_domain: process.env.NEXT_PUBLIC_JITSI_DOMAIN || 'meet.jit.si',
     });
   } catch (err) {
     console.error('[meetings/join:POST]', err);
-    return NextResponse.json({ error: 'Database error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Database error', details: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
   }
 }

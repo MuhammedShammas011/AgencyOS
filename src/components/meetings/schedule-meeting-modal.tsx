@@ -83,7 +83,7 @@ export function ScheduleMeetingModal({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Schedule Meeting" maxWidth="lg">
-      <div className="space-y-5">
+      <div className="space-y-4 sm:space-y-5">
         {error && (
           <div className="px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">{error}</div>
         )}
@@ -111,8 +111,8 @@ export function ScheduleMeetingModal({
           />
         </div>
 
-        {/* Date / Time / Duration */}
-        <div className="grid grid-cols-3 gap-3">
+        {/* Date / Time / Duration (Responsive 1-col on mobile, 3-col on sm) */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Date</label>
             <input
@@ -181,13 +181,13 @@ export function ScheduleMeetingModal({
                       onChange={() => toggleParticipant(u.id)}
                       className="sr-only"
                     />
-                    <div className="flex items-center gap-2 flex-1">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
                       <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-600 shrink-0">
                         {u.name.charAt(0)}
                       </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900">{u.name}</div>
-                        <div className="text-xs text-gray-400">{u.title}</div>
+                      <div className="truncate">
+                        <div className="text-sm font-medium text-gray-900 truncate">{u.name}</div>
+                        <div className="text-xs text-gray-400 truncate">{u.title}</div>
                       </div>
                     </div>
                   </label>
@@ -200,14 +200,34 @@ export function ScheduleMeetingModal({
           )}
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-          <Button variant="secondary" size="sm" onClick={() => handleSubmit(true)} disabled={isSubmitting || !title.trim()}>
+        {/* Actions (Responsive layout) */}
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-between gap-2 sm:gap-3 pt-3 border-t border-gray-100">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => handleSubmit(true)}
+            disabled={isSubmitting || !title.trim()}
+            className="w-full sm:w-auto justify-center"
+          >
             Start Instantly
           </Button>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
-            <Button variant="primary" size="sm" onClick={() => handleSubmit(false)} disabled={isSubmitting || !title.trim() || !date}>
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="w-full sm:w-auto justify-center"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => handleSubmit(false)}
+              disabled={isSubmitting || !title.trim() || !date}
+              className="w-full sm:w-auto justify-center"
+            >
               Schedule Meeting
             </Button>
           </div>

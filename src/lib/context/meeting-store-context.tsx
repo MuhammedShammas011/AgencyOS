@@ -3,16 +3,14 @@
 /**
  * Meeting Store Context
  *
- * Manages meeting state client-side using localStorage for instant responsiveness
- * during development. API calls persist to PostgreSQL when the DB is available.
- * This keeps the ERP functional even when the DB is unreachable.
+ * Persists all company meetings to PostgreSQL.
+ * Synchronizes meeting list and participants in real time with polling.
  */
 
 import React, {
   createContext, useContext, useState, useEffect, useCallback, ReactNode,
 } from 'react';
 import { Meeting, MeetingParticipant, MeetingStatus, ParticipantStatus } from '@/lib/types';
-import { generateId } from '@/lib/utils';
 import { toast } from 'sonner';
 
 interface MeetingStoreContextType {
@@ -36,13 +34,13 @@ interface MeetingStoreContextType {
   endMeeting: (meetingId: string) => Promise<void>;
   cancelMeeting: (meetingId: string) => Promise<void>;
   joinMeeting: (meetingId: string, employeeId: string, employeeName: string) => Promise<{ room_id: string; jitsi_domain: string }>;
-  refreshMeetings: (employeeId: string) => Promise<void>;
+  refreshMeetings: (employeeId: string, silent?: boolean) => Promise<void>;
   updateParticipantStatus: (meetingId: string, employeeId: string, status: ParticipantStatus) => void;
 }
 
 const MeetingStoreContext = createContext<MeetingStoreContextType | undefined>(undefined);
 
-const LOCAL_KEY = 'agency_os_meetings_v1';
+const LOCAL_KEY = 'agency_os_meetings_v2';
 
 function loadLocal(): Meeting[] {
   try {
@@ -57,15 +55,6 @@ function saveLocal(meetings: Meeting[]) {
   try {
     localStorage.setItem(LOCAL_KEY, JSON.stringify(meetings));
   } catch { /* storage full */ }
-}
-
-/** Cryptographically random room ID, generated client-side as fallback.
- *  The server always generates its own when the DB is available. */
-function localRoomId(): string {
-  const arr = new Uint8Array(4);
-  crypto.getRandomValues(arr);
-  const hex = Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('');
-  return `cubstudio-meeting-${hex}`;
 }
 
 export function MeetingStoreProvider({
@@ -85,28 +74,50 @@ export function MeetingStoreProvider({
     setMeetings(loadLocal());
   }, []);
 
-  // Persist to localStorage on every change
+  // Persist to localStorage on change as cache
   useEffect(() => {
-    saveLocal(meetings);
+    if (meetings.length > 0) {
+      saveLocal(meetings);
+    }
   }, [meetings]);
 
-  // ── Refresh from DB ─────────────────────────────────────────────────────────
-  const refreshMeetings = useCallback(async (employeeId: string) => {
+  // ── Refresh from PostgreSQL ──────────────────────────────────────────────────
+  const refreshMeetings = useCallback(async (employeeId: string, silent = false) => {
     if (!employeeId) return;
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     try {
-      const res = await fetch(`/api/meetings?employee_id=${encodeURIComponent(employeeId)}`);
-      if (!res.ok) throw new Error('API error');
-      const data = await res.json();
-      setMeetings(data.meetings ?? []);
+      const res = await fetch(`/api/meetings?employee_id=${encodeURIComponent(employeeId)}`, {
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.meetings)) {
+          setMeetings(data.meetings);
+        }
+      }
     } catch {
-      // DB not reachable — keep local state
+      // Keep existing state if offline
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, []);
 
-  // ── Create Meeting ──────────────────────────────────────────────────────────
+  // ── Real-time polling synchronization (every 4s) ───────────────────────────
+  useEffect(() => {
+    if (!currentEmployeeId) return;
+
+    refreshMeetings(currentEmployeeId);
+
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refreshMeetings(currentEmployeeId, true);
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [currentEmployeeId, refreshMeetings]);
+
+  // ── Create Meeting (Strict PostgreSQL persistence) ──────────────────────────
   const createMeeting = useCallback(async (params: {
     title: string;
     description?: string;
@@ -117,66 +128,25 @@ export function MeetingStoreProvider({
     participant_ids: string[];
     participant_names: string[];
   }): Promise<Meeting> => {
-
-    // Build participant list locally first (immediate UI update)
-    const participantsList: MeetingParticipant[] = params.participant_ids
-      .filter((id) => id !== params.organizer_id)
-      .map((eid, i) => ({
-        id: generateId('mprt'),
-        meeting_id: '',
-        employee_id: eid,
-        employee_name: params.participant_names[i] ?? eid,
-        invitation_status: 'invited' as ParticipantStatus,
-        created_at: new Date().toISOString(),
-      }));
-
-    // Add organizer
-    participantsList.unshift({
-      id: generateId('mprt'),
-      meeting_id: '',
-      employee_id: params.organizer_id,
-      employee_name: params.organizer_name,
-      invitation_status: 'accepted' as ParticipantStatus,
-      created_at: new Date().toISOString(),
+    const res = await fetch('/api/meetings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
     });
 
-    const localMeeting: Meeting = {
-      id: generateId('mtg'),
-      title: params.title,
-      description: params.description,
-      room_id: localRoomId(),
-      organizer_id: params.organizer_id,
-      organizer_name: params.organizer_name,
-      scheduled_at: params.scheduled_at,
-      duration_minutes: params.duration_minutes ?? 60,
-      status: params.scheduled_at ? 'scheduled' : 'live',
-      participants: participantsList,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    // Optimistic update
-    setMeetings((prev) => [localMeeting, ...prev]);
-
-    // Try to persist to DB
-    try {
-      const res = await fetch('/api/meetings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const dbMeeting: Meeting = data.meeting;
-        // Replace local meeting with DB version
-        setMeetings((prev) => prev.map((m) => (m.id === localMeeting.id ? dbMeeting : m)));
-        return dbMeeting;
-      }
-    } catch {
-      // DB offline — local version works for dev
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({ error: 'Server error' }));
+      const msg = errData.error || errData.details || 'Failed to save meeting in database';
+      toast.error(msg);
+      throw new Error(msg);
     }
 
-    return localMeeting;
+    const data = await res.json();
+    const dbMeeting: Meeting = data.meeting;
+
+    setMeetings((prev) => [dbMeeting, ...prev.filter((m) => m.id !== dbMeeting.id)]);
+    toast.success('Meeting created successfully');
+    return dbMeeting;
   }, []);
 
   // ── End Meeting ─────────────────────────────────────────────────────────────
@@ -206,52 +176,40 @@ export function MeetingStoreProvider({
     toast.success('Meeting cancelled');
   }, []);
 
-  // ── Join Meeting ────────────────────────────────────────────────────────────
+  // ── Join Meeting (Server-side authorization) ────────────────────────────────
   const joinMeeting = useCallback(async (
     meetingId: string,
     employeeId: string,
     employeeName: string,
   ): Promise<{ room_id: string; jitsi_domain: string }> => {
-    // Optimistic: mark as joined locally
+    const res = await fetch(`/api/meetings/${meetingId}/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employee_id: employeeId, employee_name: employeeName }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: 'Unable to join meeting' }));
+      throw new Error(data.error || 'Access denied to this meeting');
+    }
+
+    const data = await res.json();
+
+    // Optimistically update local participant status
     setMeetings((prev) => prev.map((m) => {
       if (m.id !== meetingId) return m;
       const updatedParts = m.participants.map((p) =>
-        p.employee_id === employeeId
+        p.employee_id === employeeId || p.employee_name === employeeName
           ? { ...p, invitation_status: 'joined' as ParticipantStatus, joined_at: new Date().toISOString() }
           : p
       );
       return { ...m, status: 'live' as MeetingStatus, participants: updatedParts };
     }));
 
-    // Try server validation
-    try {
-      const res = await fetch(`/api/meetings/${meetingId}/join`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employee_id: employeeId, employee_name: employeeName }),
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-      if (res.status === 403) {
-        const data = await res.json();
-        throw new Error(data.error || 'Access denied');
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message === 'Access denied') throw err;
-      // DB offline — fall through to local room_id
-    }
+    return data;
+  }, []);
 
-    // Fallback: use locally stored room_id
-    const meeting = meetings.find((m) => m.id === meetingId);
-    if (!meeting) throw new Error('Meeting not found');
-    return {
-      room_id: meeting.room_id,
-      jitsi_domain: process.env.NEXT_PUBLIC_JITSI_DOMAIN || 'meet.jit.si',
-    };
-  }, [meetings]);
-
-  // ── Update participant status (local only) ──────────────────────────────────
+  // ── Update participant status locally ───────────────────────────────────────
   const updateParticipantStatus = useCallback((
     meetingId: string,
     employeeId: string,

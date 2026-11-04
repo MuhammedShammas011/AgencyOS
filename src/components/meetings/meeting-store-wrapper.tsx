@@ -15,12 +15,11 @@ import { useAgencyStore } from '@/lib/context/agency-store-context';
 export function MeetingStoreWrapper({ children }: { children: React.ReactNode }) {
   const { currentUser, employeeIdentity } = useAgencyStore();
 
-  // Prefer Tailscale-identified name, then current user from store
-  const employeeName = employeeIdentity.identified && employeeIdentity.employeeName !== 'Unknown Employee'
+  const employeeName = employeeIdentity.identified && employeeIdentity.employeeName && employeeIdentity.employeeName !== 'Unknown Employee'
     ? employeeIdentity.employeeName
-    : currentUser?.name ?? 'Unknown Employee';
+    : currentUser?.name || 'Admin';
 
-  const employeeId = currentUser?.id ?? 'unknown';
+  const employeeId = currentUser?.id || 'user_admin';
 
   return (
     <MeetingStoreProvider

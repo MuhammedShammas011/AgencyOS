@@ -9,7 +9,7 @@ import { ClientFormModal } from '@/components/clients/client-form-modal';
 import { Modal } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { formatCurrency, formatDate, isPastDate, getTodayDateString } from '@/lib/utils';
-import { ArrowLeft, Plus, Trash2, Pencil, Check } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Pencil } from 'lucide-react';
 import { Client, WorkStatus, ServiceType } from '@/lib/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -165,47 +165,54 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
   return (
     <AppShell>
-      {/* Back */}
-      <Link href="/clients" className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700 transition-colors mb-6">
+      {/* Back Link */}
+      <Link href="/clients" className="inline-flex items-center gap-1.5 text-xs sm:text-sm text-gray-400 hover:text-gray-700 transition-colors mb-4 sm:mb-6">
         <ArrowLeft className="w-4 h-4" />
-        Clients
+        Back to Clients
       </Link>
 
-      {/* Page Header */}
-      <div className="flex items-start justify-between mb-8">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center text-lg font-semibold text-gray-600">
+      {/* Page Header (Responsive wrapping) */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 sm:mb-8">
+        <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-gray-100 flex items-center justify-center text-base sm:text-lg font-semibold text-gray-700 shrink-0">
             {client.company.charAt(0).toUpperCase()}
           </div>
-          <div>
-            <h1 className="text-xl font-semibold text-gray-900">{client.company}</h1>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span className="text-sm text-gray-400">{client.name}</span>
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl font-semibold text-gray-900 truncate">{client.company}</h1>
+            <div className="flex items-center gap-1.5 sm:gap-2 mt-1 flex-wrap">
+              <span className="text-xs sm:text-sm text-gray-400">{client.name}</span>
               {(client.services || []).map((svc) => (
-                <span key={svc} className="px-2 py-0.5 text-xs bg-gray-100 text-gray-600 rounded-md">{svc}</span>
+                <span key={svc} className="px-2 py-0.5 text-[11px] sm:text-xs bg-gray-100 text-gray-600 rounded-md truncate max-w-[150px]">{svc}</span>
               ))}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setIsEditModalOpen(true)} className="flex items-center gap-1.5 px-3 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+
+        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+          <button
+            onClick={() => setIsEditModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 text-xs sm:text-sm text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+          >
             <Pencil className="w-3.5 h-3.5" /> Edit
           </button>
-          <button onClick={() => setIsDeleteConfirmOpen(true)} className="flex items-center gap-1.5 px-3 py-2 text-sm text-red-500 border border-red-100 rounded-lg hover:bg-red-50 transition-colors">
+          <button
+            onClick={() => setIsDeleteConfirmOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 sm:py-2 text-xs sm:text-sm text-red-500 border border-red-100 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
+          >
             <Trash2 className="w-3.5 h-3.5" /> Delete
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 sm:gap-6">
 
         {/* ── Left Column ──────────────────────────────── */}
         <div className="lg:col-span-2 space-y-5">
 
           {/* Client Information */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Client Information</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6">
+          <div className="bg-white border border-gray-100 rounded-xl p-4 sm:p-5 shadow-2xs">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3 sm:mb-4">Client Information</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3.5 sm:gap-y-4 gap-x-6">
               <div>
                 <div className="text-xs text-gray-400 mb-0.5">Company Name</div>
                 <div className="text-sm text-gray-900 font-medium">{client.company}</div>
@@ -223,17 +230,17 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
               {client.email && (
                 <div>
                   <div className="text-xs text-gray-400 mb-0.5">Email</div>
-                  <div className="text-sm text-gray-900">{client.email}</div>
+                  <div className="text-sm text-gray-900 break-all">{client.email}</div>
                 </div>
               )}
             </div>
           </div>
 
           {/* Client Handler */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Client Handler</h2>
+          <div className="bg-white border border-gray-100 rounded-xl p-4 sm:p-5 shadow-2xs">
+            <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3 sm:mb-4">Client Handler</h2>
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-600">
+              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-semibold text-gray-600 shrink-0">
                 {(client.account_manager_name || 'U').charAt(0).toUpperCase()}
               </div>
               <div className="text-sm text-gray-900 font-medium">{client.account_manager_name || 'Unassigned'}</div>
@@ -241,8 +248,8 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
           </div>
 
           {/* Work & Progress */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-white border border-gray-100 rounded-xl p-4 sm:p-5 shadow-2xs">
+            <div className="flex items-center justify-between gap-2 mb-4">
               <div>
                 <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Work & Progress</h2>
                 {workItems.length > 0 && (
@@ -251,7 +258,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
               </div>
               <button
                 onClick={openAddWork}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 transition-colors shrink-0 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" /> Add Work
               </button>
@@ -260,36 +267,39 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
             {workItems.length === 0 ? (
               <div className="py-8 text-center text-sm text-gray-400">
                 No work items yet.{' '}
-                <button onClick={openAddWork} className="underline text-gray-600 hover:text-gray-900">Add one</button>
+                <button onClick={openAddWork} className="underline text-gray-600 hover:text-gray-900 cursor-pointer">Add one</button>
               </div>
             ) : (
               <div className="space-y-3">
                 {workItems.map((item) => {
                   const statusCfg = WORK_STATUSES.find((s) => s.value === item.status) ?? WORK_STATUSES[0];
                   return (
-                    <div key={item.id} className="border border-gray-100 rounded-xl p-4 group hover:border-gray-200 transition-colors">
-                      <div className="flex items-start justify-between gap-3">
+                    <div key={item.id} className="border border-gray-100 rounded-xl p-3.5 sm:p-4 group hover:border-gray-200 transition-colors">
+                      <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-sm font-medium text-gray-900">{item.title}</span>
-                            <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded">{item.service}</span>
+                            <span className="text-[11px] text-gray-400 bg-gray-50 px-2 py-0.5 rounded">{item.service}</span>
                           </div>
-                          {item.notes && <p className="text-xs text-gray-400 mt-1">{item.notes}</p>}
+                          {item.notes && <p className="text-xs text-gray-400 mt-1 line-clamp-2">{item.notes}</p>}
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium border ${statusCfg.color}`}>
+                        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] sm:text-xs font-medium border ${statusCfg.color}`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${statusCfg.dot}`} />
                             {statusCfg.label}
                           </span>
+                          {/* Visible on mobile touchscreens without hover */}
                           <button
                             onClick={() => openEditWork(item.id)}
-                            className="p-1 text-gray-300 hover:text-gray-600 transition-colors opacity-0 group-hover:opacity-100"
+                            className="p-1 text-gray-400 hover:text-gray-700 transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer"
+                            title="Edit work item"
                           >
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => deleteClientWorkItem(item.id)}
-                            className="p-1 text-gray-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                            className="p-1 text-gray-400 hover:text-red-500 transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 cursor-pointer"
+                            title="Delete work item"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -321,7 +331,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
           </div>
 
           {/* Payment Details */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
+          <div className="bg-white border border-gray-100 rounded-xl p-4 sm:p-5 shadow-2xs">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Payment Details</h2>
               <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border ${cfg.bg} ${cfg.text}`}>
@@ -329,7 +339,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 {cfg.label}
               </span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-4 gap-x-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-4 gap-x-4 sm:gap-x-6">
               <div>
                 <div className="text-xs text-gray-400 mb-0.5">Agreed Amount</div>
                 <div className="text-sm text-gray-900 font-semibold">{formatCurrency(agreedAmount)}</div>
@@ -356,12 +366,12 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
           </div>
 
           {/* Payment History */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-white border border-gray-100 rounded-xl p-4 sm:p-5 shadow-2xs">
+            <div className="flex items-center justify-between gap-2 mb-4">
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Payment History</h2>
               <button
                 onClick={() => setIsPaymentModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 transition-colors shrink-0 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" /> Add Payment
               </button>
@@ -369,14 +379,14 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
             {payments.length === 0 ? (
               <div className="py-8 text-center text-sm text-gray-400">No payments recorded yet.</div>
             ) : (
-              <div className="space-y-0">
+              <div className="divide-y divide-gray-50">
                 {payments.map((p) => (
-                  <div key={p.id} className="flex items-center justify-between py-3 border-b border-gray-50 last:border-0">
-                    <div>
+                  <div key={p.id} className="flex items-center justify-between py-3">
+                    <div className="min-w-0 pr-3">
                       <div className="text-sm text-gray-900 font-medium">{formatCurrency(p.amount)}</div>
-                      {p.note && <div className="text-xs text-gray-400 mt-0.5">{p.note}</div>}
+                      {p.note && <div className="text-xs text-gray-400 mt-0.5 truncate">{p.note}</div>}
                     </div>
-                    <div className="text-xs text-gray-400">{formatDate(p.payment_date)}</div>
+                    <div className="text-xs text-gray-400 shrink-0">{formatDate(p.payment_date)}</div>
                   </div>
                 ))}
               </div>
@@ -388,7 +398,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
         <div className="space-y-5">
 
           {/* Payment summary */}
-          <div className="bg-white border border-gray-100 rounded-xl p-5">
+          <div className="bg-white border border-gray-100 rounded-xl p-4 sm:p-5 shadow-2xs">
             <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Payment Summary</h2>
             <div className="space-y-3">
               <div className="flex justify-between items-center">
@@ -415,14 +425,17 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
                 </div>
               )}
             </div>
-            <button onClick={() => setIsPaymentModalOpen(true)} className="w-full mt-5 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors">
+            <button
+              onClick={() => setIsPaymentModalOpen(true)}
+              className="w-full mt-5 py-2 bg-gray-900 text-white text-sm font-medium rounded-lg hover:bg-gray-800 transition-colors cursor-pointer"
+            >
               + Add Payment
             </button>
           </div>
 
           {/* Work summary */}
           {workItems.length > 0 && (
-            <div className="bg-white border border-gray-100 rounded-xl p-5">
+            <div className="bg-white border border-gray-100 rounded-xl p-4 sm:p-5 shadow-2xs">
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Work Summary</h2>
               <div className="space-y-2">
                 {WORK_STATUSES.filter((s) => workItems.some((w) => w.status === s.value)).map((s) => {
@@ -452,7 +465,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
           {/* Services list */}
           {(client.services || []).length > 0 && (
-            <div className="bg-white border border-gray-100 rounded-xl p-5">
+            <div className="bg-white border border-gray-100 rounded-xl p-4 sm:p-5 shadow-2xs">
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Services</h2>
               <div className="flex flex-wrap gap-1.5">
                 {(client.services || []).map((svc) => (
@@ -487,7 +500,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
             <input type="text" value={payNote} onChange={(e) => setPayNote(e.target.value)} placeholder="e.g. First installment"
               className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none focus:border-gray-400 transition-colors" />
           </div>
-          <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-2 sm:gap-3 pt-3 border-t border-gray-100">
             <Button variant="secondary" size="sm" onClick={() => setIsPaymentModalOpen(false)}>Cancel</Button>
             <Button variant="primary" size="sm" onClick={handleAddPayment} disabled={!payAmount || parseFloat(payAmount) <= 0}>Record Payment</Button>
           </div>
@@ -515,7 +528,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
               {SERVICE_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
               <select value={workStatus} onChange={(e) => setWorkStatus(e.target.value as WorkStatus)}
@@ -534,7 +547,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
             <input type="text" value={workNotes} onChange={(e) => setWorkNotes(e.target.value)} placeholder="Any extra details..."
               className="w-full text-sm px-3 py-2 rounded-lg border border-gray-200 bg-white outline-none focus:border-gray-400 transition-colors" />
           </div>
-          <div className="flex items-center justify-end gap-3 pt-2 border-t border-gray-100">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-2 sm:gap-3 pt-3 border-t border-gray-100">
             <Button variant="secondary" size="sm" onClick={() => setIsAddWorkModalOpen(false)}>Cancel</Button>
             <Button variant="primary" size="sm" onClick={handleSaveWork} disabled={!workTitle.trim()}>
               {editingWorkItemId ? 'Save Changes' : 'Add Work Item'}
@@ -545,7 +558,7 @@ function ClientDetailContent({ params }: { params: Promise<{ id: string }> }) {
 
       {/* Delete Confirm */}
       <Modal isOpen={isDeleteConfirmOpen} onClose={() => setIsDeleteConfirmOpen(false)} title="Remove Client" description="This will mark the client as lost. Are you sure?" maxWidth="sm">
-        <div className="flex items-center justify-end gap-3 pt-2">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-2 sm:gap-3 pt-2">
           <Button variant="secondary" size="sm" onClick={() => setIsDeleteConfirmOpen(false)}>Cancel</Button>
           <Button variant="danger" size="sm" onClick={handleDelete}>Remove Client</Button>
         </div>

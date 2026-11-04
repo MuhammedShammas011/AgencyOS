@@ -244,11 +244,11 @@ export function ClientFormModal({ isOpen, onClose, client }: ClientFormModalProp
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3 pt-3 border-t border-gray-100">
-          <Button variant="secondary" size="sm" type="button" onClick={onClose}>
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-2 sm:gap-3 pt-3 border-t border-gray-100">
+          <Button variant="secondary" size="sm" type="button" onClick={onClose} className="w-full sm:w-auto justify-center">
             Cancel
           </Button>
-          <Button variant="primary" size="sm" type="submit" disabled={isSubmitting}>
+          <Button variant="primary" size="sm" type="submit" disabled={isSubmitting} className="w-full sm:w-auto justify-center">
             {client ? 'Save Changes' : 'Add Client'}
           </Button>
         </div>

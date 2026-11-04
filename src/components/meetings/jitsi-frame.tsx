@@ -174,8 +174,7 @@ export function JitsiFrame({
   return (
     <div
       ref={containerRef}
-      className="w-full h-full"
-      style={{ minHeight: 480 }}
+      className="w-full h-full min-h-[300px]"
     />
   );
 }

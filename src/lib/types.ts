@@ -459,7 +459,7 @@ export interface NotificationItem {
   id: string;
   title: string;
   message: string;
-  type: 'deadline_overdue' | 'invoice_overdue' | 'proposal_decision' | 'approval_needed' | 'client_risk' | 'system';
+  type: 'deadline_overdue' | 'invoice_overdue' | 'proposal_decision' | 'approval_needed' | 'client_risk' | 'system' | 'meeting_invitation';
   urgency: 'high' | 'medium' | 'low';
   link_url: string;
   is_read: boolean;
