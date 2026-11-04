@@ -517,3 +517,39 @@ export interface BusinessPulseMetrics {
   client_retention_rate: number;
   timeframe: '7d' | '30d' | '90d' | 'custom';
 }
+
+// ─────────────────────────────────────────────
+// Meetings Module Types
+// ─────────────────────────────────────────────
+
+export type MeetingStatus = 'scheduled' | 'live' | 'ended' | 'cancelled';
+export type ParticipantStatus = 'invited' | 'accepted' | 'declined' | 'joined' | 'left';
+
+export interface MeetingParticipant {
+  id: string;
+  meeting_id: string;
+  employee_id: string;
+  employee_name: string;
+  invitation_status: ParticipantStatus;
+  joined_at?: string;
+  left_at?: string;
+  created_at: string;
+}
+
+export interface Meeting {
+  id: string;
+  title: string;
+  description?: string;
+  /** Cryptographically random, e.g. "cubstudio-meeting-a8f32c91" */
+  room_id: string;
+  organizer_id: string;
+  organizer_name: string;
+  /** null for instant meetings */
+  scheduled_at?: string;
+  duration_minutes: number;
+  status: MeetingStatus;
+  ended_at?: string;
+  participants: MeetingParticipant[];
+  created_at: string;
+  updated_at: string;
+}

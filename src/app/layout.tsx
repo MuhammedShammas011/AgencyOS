@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { AgencyStoreProvider } from '@/lib/context/agency-store-context';
+import { MeetingStoreWrapper } from '@/components/meetings/meeting-store-wrapper';
 import { Toaster } from 'sonner';
 
 const geistSans = Geist({
@@ -40,19 +41,21 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-[#F7F6F2] text-[#171717]">
         <AgencyStoreProvider>
-          {children}
-          <Toaster
-            position="bottom-right"
-            toastOptions={{
-              style: {
-                background: '#1C1C1A',
-                color: '#FFFFFF',
-                border: '1px solid #2F2F2C',
-                borderRadius: '8px',
-                fontFamily: 'var(--font-sans)',
-              },
-            }}
-          />
+          <MeetingStoreWrapper>
+            {children}
+            <Toaster
+              position="bottom-right"
+              toastOptions={{
+                style: {
+                  background: '#1C1C1A',
+                  color: '#FFFFFF',
+                  border: '1px solid #2F2F2C',
+                  borderRadius: '8px',
+                  fontFamily: 'var(--font-sans)',
+                },
+              }}
+            />
+          </MeetingStoreWrapper>
         </AgencyStoreProvider>
       </body>
     </html>
