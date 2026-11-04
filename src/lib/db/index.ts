@@ -3,6 +3,11 @@ import { Pool, QueryResult, QueryResultRow } from 'pg';
 const connectionString =
   process.env.DATABASE_URL || 'postgresql://localhost:5432/agency_os';
 
+const isLocalhost =
+  !process.env.DATABASE_URL ||
+  connectionString.includes('localhost') ||
+  connectionString.includes('127.0.0.1');
+
 // Maintain a single pool instance across Next.js fast-refresh cycles
 declare global {
   var __agency_pg_pool: Pool | undefined;
@@ -15,6 +20,7 @@ export const pool: Pool =
     max: 20,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
+    ssl: isLocalhost ? undefined : { rejectUnauthorized: false },
   });
 
 if (process.env.NODE_ENV !== 'production') {
@@ -47,6 +53,13 @@ export async function testConnection(): Promise<{
   tablesCount?: number;
   error?: string;
 }> {
+  if (!process.env.DATABASE_URL && process.env.NODE_ENV === 'production') {
+    return {
+      connected: false,
+      error: 'DATABASE_URL environment variable is not configured',
+    };
+  }
+
   try {
     const infoRes = await query<{
       db: string;

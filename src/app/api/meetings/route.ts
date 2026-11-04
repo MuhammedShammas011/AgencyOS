@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, connection } from 'next/server';
 import { query } from '@/lib/db';
 import { randomBytes } from 'crypto';
 
@@ -12,6 +12,7 @@ function generateRoomId(): string {
 // Returns meetings where employee_id is organizer or participant.
 // Query param: ?employee_id=...
 export async function GET(request: NextRequest) {
+  await connection();
   const { searchParams } = new URL(request.url);
   const employeeId = searchParams.get('employee_id');
 

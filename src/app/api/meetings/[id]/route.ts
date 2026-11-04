@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, connection } from 'next/server';
 import { query } from '@/lib/db';
 
 // ── GET /api/meetings/[id] ────────────────────────────────────────────────────
@@ -7,6 +7,7 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  await connection();
   const { id } = await params;
   try {
     const mtgResult = await query(`SELECT * FROM meetings WHERE id = $1`, [id]);

@@ -20,7 +20,7 @@ export function ReceivablesAging({ onRecordPayment }: ReceivablesAgingProps) {
     (inv) => inv.outstanding_amount > 0 && inv.status !== 'voided'
   );
 
-  const referenceDate = new Date();
+  const referenceDate = typeof window === 'undefined' ? new Date('2026-10-15T12:00:00Z') : new Date();
 
   // Categorize invoices into aging buckets
   const buckets = {

@@ -59,11 +59,17 @@ export default function MeetingsPage() {
   };
 
   // ── Tabs ─────────────────────────────────────────────────────────────────
-  const now = new Date();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const now = mounted ? new Date() : null;
 
   const upcoming = meetings.filter((m) =>
     (m.status === 'scheduled' || m.status === 'live') &&
-    (!m.scheduled_at || new Date(m.scheduled_at) >= now)
+    (!m.scheduled_at || !now || new Date(m.scheduled_at) >= now)
   );
 
   const myMeetings = meetings.filter((m) =>
@@ -73,7 +79,7 @@ export default function MeetingsPage() {
 
   const history = meetings.filter((m) =>
     m.status === 'ended' || m.status === 'cancelled' ||
-    (m.scheduled_at && new Date(m.scheduled_at) < now && m.status === 'scheduled')
+    (m.scheduled_at && now && new Date(m.scheduled_at) < now && m.status === 'scheduled')
   );
 
   const tabCounts: Record<TabId, number> = {

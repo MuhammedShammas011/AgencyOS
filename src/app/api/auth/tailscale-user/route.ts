@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { connection } from 'next/server';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { findEmployeeByTailscaleNode } from '@/lib/tailscale/employees';
@@ -27,6 +28,7 @@ interface TailscaleWhoisOutput {
 
 
 export async function GET(request: NextRequest) {
+  await connection();
   try {
     // 1. Extract originating client IP from request headers (server-side socket remote address)
     // Never trust client-supplied request body or URL query parameters
